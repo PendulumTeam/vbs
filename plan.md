@@ -27,6 +27,7 @@ This plan outlines the development of an intelligent virtual assistant for multi
    - Audio transcription (Whisper)
    - Vietnamese text processing (PhoBERT/ViT5)
    - Batch processing for large datasets
+   - **Storage**: Cloud object storage for embeddings (S3/GCS/Azure Blob)
 
 2. **CPU-Optimized Inference Engine**
    - Quantized models (ONNX, INT8)
@@ -156,6 +157,190 @@ This plan outlines the development of an intelligent virtual assistant for multi
 - Submit competition entry
 
 ---
+
+## Cloud Embedding Storage Architecture
+
+### Recommended Platforms (Ranked by Cost-Effectiveness)
+
+#### 1. **AWS S3 + CloudFront** (Best for Scale)
+```yaml
+Storage Structure:
+  s3://vbs-embeddings/
+  ├── videos/
+  │   ├── {video_id}/
+  │   │   ├── metadata.json
+  │   │   ├── frames/
+  │   │   │   ├── frame_0000.json  # GME embeddings + descriptions
+  │   │   │   ├── frame_0001.json
+  │   │   │   └── ...
+  │   │   └── index.faiss  # Pre-built FAISS index
+  └── cache/
+      └── query_results/  # Cached search results
+
+Cost Optimization:
+  - S3 Standard: Hot embeddings (frequently accessed)
+  - S3 Infrequent Access: Older embeddings
+  - S3 Glacier: Archive competition data
+  - CloudFront CDN: Cache popular embeddings globally
+  
+Estimated Cost: ~$50-100/month for 1TB embeddings
+```
+
+#### 2. **Google Cloud Storage + Filestore** (Best for AI/ML)
+```yaml
+Advantages:
+  - Native integration with Vertex AI
+  - High-performance Filestore for FAISS indices
+  - Nearline storage class for cost savings
+  - Cloud CDN for global distribution
+
+Storage Classes:
+  - Standard: Active embeddings
+  - Nearline: 30+ day old data (65% cheaper)
+  - Coldline: Archive (80% cheaper)
+  
+ML Integration:
+  - Direct mounting in AI Platform notebooks
+  - Batch prediction pipelines
+  - AutoML integration
+  
+Estimated Cost: ~$40-80/month for 1TB
+```
+
+#### 3. **MinIO Self-Hosted** (Best for Budget)
+```yaml
+Deployment Options:
+  - DigitalOcean Spaces ($5/month for 250GB)
+  - Vultr Object Storage ($6/month for 1TB)
+  - Self-hosted on VPS with NVMe ($20-40/month)
+
+Architecture:
+  minio/
+  ├── embeddings/
+  │   ├── gme/  # GME model outputs
+  │   ├── clip/  # CLIP embeddings
+  │   └── metadata/
+  └── indices/
+      ├── faiss/
+      └── annoy/
+      
+Benefits:
+  - S3-compatible API
+  - No vendor lock-in
+  - Full control over data
+  
+Estimated Cost: ~$20-40/month for 1TB
+```
+
+#### 4. **Hybrid Approach** (Recommended)
+```yaml
+Strategy:
+  - Hot Storage: Redis/Memcached (recent queries)
+  - Warm Storage: PostgreSQL with pgvector (7 days)
+  - Cold Storage: S3/GCS (long-term)
+  
+Data Flow:
+  1. Generate embeddings on GPU → S3/GCS
+  2. Download to PostgreSQL for active search
+  3. Cache hot queries in Redis
+  4. Archive to cold storage after competition
+```
+
+### Embedding Storage Format
+
+```python
+# Efficient storage format for embeddings
+class EmbeddingStorage:
+    def __init__(self, storage_backend='s3'):
+        self.backend = storage_backend
+        
+    def save_frame_embedding(self, video_id, frame_num, data):
+        """
+        Save GME outputs efficiently
+        """
+        embedding_data = {
+            'video_id': video_id,
+            'frame_number': frame_num,
+            'timestamp': data['timestamp'],
+            'gme_embedding': data['embedding'].astype(np.float16).tolist(),  # Reduce size by 50%
+            'gme_description': data['description'],  # Vietnamese/English text
+            'objects': data['detected_objects'],
+            'scene_type': data['scene_classification'],
+            'confidence': data['confidence_scores']
+        }
+        
+        # Compress with MessagePack (30% smaller than JSON)
+        import msgpack
+        compressed = msgpack.packb(embedding_data)
+        
+        # Save to cloud storage
+        key = f"videos/{video_id}/frames/frame_{frame_num:06d}.msgpack"
+        self.upload_to_cloud(key, compressed)
+        
+    def batch_upload_embeddings(self, embeddings, use_multipart=True):
+        """
+        Efficient batch upload with compression
+        """
+        # Group by video for better organization
+        # Use multipart upload for large batches
+        # Compress similar embeddings together
+        pass
+```
+
+### Access Patterns & Caching
+
+```python
+# Tiered access strategy
+class EmbeddingRetriever:
+    def __init__(self):
+        self.redis = Redis()  # Hot cache
+        self.pg = PostgreSQL()  # Warm storage with pgvector
+        self.s3 = S3Client()  # Cold storage
+        
+    async def get_embeddings(self, video_id, frame_range):
+        # 1. Check Redis cache (< 5ms)
+        cached = await self.redis.get(f"{video_id}:{frame_range}")
+        if cached:
+            return cached
+            
+        # 2. Check PostgreSQL (< 50ms)
+        db_result = await self.pg.query_embeddings(video_id, frame_range)
+        if db_result:
+            await self.redis.set(key, db_result, ex=3600)  # Cache 1 hour
+            return db_result
+            
+        # 3. Fetch from S3 (< 200ms with CDN)
+        s3_data = await self.s3.download_embeddings(video_id, frame_range)
+        
+        # Populate caches
+        await self.pg.insert_embeddings(s3_data)
+        await self.redis.set(key, s3_data, ex=3600)
+        
+        return s3_data
+```
+
+### Cost Optimization Strategies
+
+1. **Compression**: Use float16 instead of float32 (50% reduction)
+2. **Deduplication**: Hash similar frames, store only unique
+3. **Tiered Storage**: Move old data to cheaper storage classes
+4. **CDN Caching**: Cache popular embeddings at edge locations
+5. **Batch Processing**: Process videos in batches to reduce API calls
+
+### Security Considerations
+
+```yaml
+Access Control:
+  - IAM roles for service accounts
+  - Signed URLs for temporary access
+  - Encryption at rest and in transit
+  - VPC endpoints for private access
+  
+Data Protection:
+  - Backup embeddings to multiple regions
+  - Version control for embedding updates
+  - Audit logs for access tracking
+```
 
 ## Implementation Prompts
 
@@ -1171,7 +1356,7 @@ Weekly Integration (2 hours):
 ## Quick Start Guide
 
 ### Week 1 Priority Actions
-1. **Day 1**: Set up cloud GPU instance with 40GB+ VRAM for GME-Qwen2-VL
+1. **Day 1**: Set up cloud GPU instance with 40GB+ VRAM for GME-Qwen2-VL + cloud storage
 2. **Day 2**: Initialize monorepo with AI and Chat modules + Next.js 14 frontend
 3. **Day 3**: Test GME-Qwen2-VL on sample videos for scene understanding
 4. **Day 4**: Implement enhanced keyframe extraction pipeline
