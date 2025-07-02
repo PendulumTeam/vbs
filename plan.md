@@ -17,7 +17,7 @@ This plan outlines the development of an intelligent virtual assistant for multi
 - **AI Module (Python)**: All ML models, embeddings, video processing
 - **Chat Module (Go/Node.js)**: API server, WebSocket, chat interface
 - **Communication**: Simple HTTP/REST between modules, WebSocket for clients
-- **Shared Database**: Single PostgreSQL/MongoDB for both modules
+- **Shared Database**: Single MongoDB for both modules
 
 ### System Components
 
@@ -236,12 +236,12 @@ Estimated Cost: ~$20-40/month for 1TB
 ```yaml
 Strategy:
   - Hot Storage: Redis/Memcached (recent queries)
-  - Warm Storage: PostgreSQL with pgvector (7 days)
+  - Warm Storage: MongoDB with vector search (7 days)
   - Cold Storage: S3/GCS (long-term)
   
 Data Flow:
   1. Generate embeddings on GPU → S3/GCS
-  2. Download to PostgreSQL for active search
+  2. Download to MongoDB for active search
   3. Cache hot queries in Redis
   4. Archive to cold storage after competition
 ```
@@ -294,7 +294,7 @@ class EmbeddingStorage:
 class EmbeddingRetriever:
     def __init__(self):
         self.redis = Redis()  # Hot cache
-        self.pg = PostgreSQL()  # Warm storage with pgvector
+        self.mongo = MongoDB()  # Warm storage with Atlas Vector Search
         self.s3 = S3Client()  # Cold storage
         
     async def get_embeddings(self, video_id, frame_range):
@@ -303,8 +303,11 @@ class EmbeddingRetriever:
         if cached:
             return cached
             
-        # 2. Check PostgreSQL (< 50ms)
-        db_result = await self.pg.query_embeddings(video_id, frame_range)
+        # 2. Check MongoDB (< 50ms)
+        db_result = await self.mongo.embeddings.find_one({
+            "video_id": video_id,
+            "frame_range": {"$gte": frame_range[0], "$lte": frame_range[1]}
+        })
         if db_result:
             await self.redis.set(key, db_result, ex=3600)  # Cache 1 hour
             return db_result
@@ -313,7 +316,7 @@ class EmbeddingRetriever:
         s3_data = await self.s3.download_embeddings(video_id, frame_range)
         
         # Populate caches
-        await self.pg.insert_embeddings(s3_data)
+        await self.mongo.embeddings.insert_one(s3_data)
         await self.redis.set(key, s3_data, ex=3600)
         
         return s3_data
@@ -793,10 +796,12 @@ services:
     ports: ["8000:8000"]
     depends_on: [ai-module]
     
-  postgres:
-    image: postgres:15
+  mongodb:
+    image: mongo:7
     environment:
-      POSTGRES_DB: vbs_db
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: vbs_db
 ```
 
 ### Phase 7: Integration and Testing
@@ -885,7 +890,7 @@ Save as ai-module/optimization/cpu_perf.py
 Create production deployment setup:
 - Single server deployment with Docker Compose
 - Nginx reverse proxy for both modules
-- Shared PostgreSQL database
+- Shared MongoDB database
 - Redis for caching
 - Simple health checks
 - Volume mounts for model files
@@ -1349,9 +1354,9 @@ Weekly Integration (2 hours):
    ```
 
 5. **Shared Development Database**
-   - Both teams use same PostgreSQL instance
+   - Both teams use same MongoDB instance
    - Shared test data for consistency
-   - Migration scripts in shared/ folder
+   - Database initialization scripts in shared/ folder
 
 ## Quick Start Guide
 

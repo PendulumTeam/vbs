@@ -1,0 +1,101 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.sum
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+.next/
+out/
+build/
+
+# Environment
+.env
+.env.local
+.env.development
+.env.production
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Models and Data
+*.onnx
+*.pth
+*.h5
+*.pkl
+*.faiss
+*.index
+embeddings/
+models/weights/
+data/raw/
+data/processed/
+
+# Logs
+logs/
+*.log
+
+# Docker
+.dockerignore
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# MinIO/S3
+.minio/
+minio-data/
+
+# Redis
+dump.rdb
+
+# PostgreSQL
+*.sql
+pgdata/
+
+# Test outputs
+test-results/
+htmlcov/
+.benchmarks/
