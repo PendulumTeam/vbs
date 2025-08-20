@@ -2,58 +2,72 @@
 
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { 
-  TreeNode, 
-  GroupNode, 
-  VideoNode, 
-  FrameNode,
-  FileBrowserState, 
-  TreeResponse,
-  FileFilters,
-  BreadcrumbItem,
-  SearchPlatformIntegration,
-  FileMetadata
-} from '@/lib/file-browser-types';
-import { debounce } from '@/lib/file-browser-utils';
-import { useTreeQuery, usePrefetchQueries } from './use-file-queries';
+  useGroupsQuery,
+  useGroupVideosQuery,
+  useVideoFramesQuery,
+  useProgressivePrefetch,
+  GroupSummary,
+  VideoSummary,
+  FrameData
+} from './use-file-queries';
+import { useUrlSync } from './use-url-state';
+
+// State management for three-tier loading
+interface FileBrowserState {
+  // Navigation state (now synced with URL)
+  selectedGroup: string | null;
+  selectedVideo: string | null;
+  currentPage: number;
+  
+  // UI state
+  expandedNodes: Set<string>; // Track which nodes are expanded
+  loadingNodes: Set<string>; // Track which nodes are loading
+  
+  // View preferences (now synced with URL)
+  viewMode: 'grid' | 'list';
+  thumbnailSize: 'small' | 'medium' | 'large';
+  framesPerPage: 25 | 50 | 100;
+  
+  // Search state
+  searchQuery: string;
+  
+  // Selection state
+  selectedFrames: Set<string>;
+  multiSelectMode: boolean;
+}
 
 interface FileBrowserContextType {
   // State
   state: FileBrowserState;
   
-  // Tree data
-  treeData: TreeResponse | null;
-  isLoading: boolean;
-  error: string | null;
+  // Data queries (automatically managed)
+  groupsData: ReturnType<typeof useGroupsQuery>;
+  currentGroupVideos: ReturnType<typeof useGroupVideosQuery>;
+  currentVideoFrames: ReturnType<typeof useVideoFramesQuery>;
   
-  // Actions
-  expandNode: (nodeId: string) => void;
-  collapseNode: (nodeId: string) => void;
-  selectNode: (nodeId: string, multiSelect?: boolean) => void;
-  navigateToNode: (path: string[]) => void;
+  // Navigation actions (URL-aware)
+  selectGroup: (groupId: string | null) => void;
+  selectVideo: (videoId: string | null) => void;
+  toggleNodeExpansion: (nodeId: string) => void;
+  navigateToPage: (page: number) => void;
+  nextPage: () => void;
+  prevPage: () => void;
+  
+  // View actions (URL-aware)
+  setViewMode: (mode: 'grid' | 'list') => void;
+  setThumbnailSize: (size: 'small' | 'medium' | 'large') => void;
+  setFramesPerPage: (count: 25 | 50 | 100) => void;
   
   // Search actions
   setSearchQuery: (query: string) => void;
-  applyFilters: (filters: Partial<FileFilters>) => void;
-  clearFilters: () => void;
   
-  // View actions
-  setViewMode: (mode: 'grid' | 'list') => void;
-  setThumbnailSize: (size: 'small' | 'medium' | 'large') => void;
-  setSortBy: (sortBy: string, direction?: 'asc' | 'desc') => void;
-  
-  // Multi-select actions
+  // Selection actions
+  selectFrame: (frameId: string, multiSelect?: boolean) => void;
   toggleMultiSelect: () => void;
-  selectAll: () => void;
   clearSelection: () => void;
   
-  // Integration hooks for search platform
-  onFrameSelect?: (frames: FileMetadata[]) => void;
-  onSimilaritySearch?: (frameId: string) => void;
-  onAddToCanvas?: (frame: FileMetadata) => void;
-  
-  // Performance optimization hooks
-  onNodeHover?: (node: TreeNode) => void;
-  refreshData?: () => void;
+  // Performance actions
+  prefetchOnHover: (type: 'group' | 'video', groupId: string, videoId?: string) => void;
 }
 
 const FileBrowserContext = createContext<FileBrowserContextType | null>(null);
@@ -68,53 +82,139 @@ export function useFileBrowser() {
 
 interface FileBrowserProviderProps {
   children: ReactNode;
-  integration?: SearchPlatformIntegration;
 }
 
-export function FileBrowserProvider({ children, integration }: FileBrowserProviderProps) {
-  // Core state
-  const [state, setState] = useState<FileBrowserState>({
-    expandedNodes: new Set(),
-    selectedNodes: new Set(),
-    loadingNodes: new Set(),
-    viewMode: 'grid',
-    thumbnailSize: 'medium',
-    sortBy: 'name',
-    sortDirection: 'asc',
-    currentPath: [],
-    breadcrumbs: [{ id: 'root', name: 'Files', type: 'root', path: [] }],
-    searchQuery: '',
-    activeFilters: {},
-    multiSelectMode: false,
-    lastSelectedNode: null
-  });
-
-  // TanStack Query for tree data
-  const { 
-    data: treeData, 
-    isLoading, 
-    error: queryError,
-    refetch: refetchTree 
-  } = useTreeQuery({
-    expand: Array.from(state.expandedNodes),
-    sort: state.sortBy
-  });
+export function FileBrowserProvider({ children }: FileBrowserProviderProps) {
+  // URL state management
+  const urlSync = useUrlSync();
   
-  const error = queryError?.message || null;
-  const prefetch = usePrefetchQueries();
+  // Initialize state from URL
+  const [state, setState] = useState<FileBrowserState>(() => {
+    const urlState = urlSync.getInitialState();
+    return {
+      selectedGroup: urlState.group || null,
+      selectedVideo: urlState.video || null,
+      currentPage: urlState.page || 1,
+      expandedNodes: new Set(urlState.group ? [urlState.group] : []),
+      loadingNodes: new Set(),
+      viewMode: urlState.view || 'grid',
+      thumbnailSize: urlState.size || 'medium',
+      framesPerPage: (urlState.limit as 25 | 50 | 100) || 50,
+      searchQuery: '',
+      selectedFrames: new Set(),
+      multiSelectMode: false,
+    };
+  });
 
-  // Tree navigation actions
-  const expandNode = useCallback((nodeId: string) => {
+  // Tier 1: Always load groups overview (fast)
+  const groupsData = useGroupsQuery({
+    sort: 'name',
+    limit: 50
+  });
+
+  // Tier 2: Load videos only when group is selected
+  const currentGroupVideos = useGroupVideosQuery(
+    state.selectedGroup || '',
+    {
+      sort: 'name',
+      includeSample: true // Include sample frames for preview
+    },
+    {
+      enabled: !!state.selectedGroup
+    }
+  );
+
+  // Tier 3: Load frames only when video is selected
+  const currentVideoFrames = useVideoFramesQuery(
+    state.selectedGroup || '',
+    state.selectedVideo || '',
+    {
+      page: state.currentPage,
+      limit: state.framesPerPage,
+      sort: 'frame'
+    },
+    {
+      enabled: !!state.selectedGroup && !!state.selectedVideo
+    }
+  );
+
+  // Prefetch utilities
+  const prefetch = useProgressivePrefetch();
+
+  // Navigation actions (URL-aware)
+  const selectGroup = useCallback((groupId: string | null) => {
+    if (groupId) {
+      urlSync.navigateToGroup(groupId);
+    } else {
+      urlSync.clearGroup();
+    }
+    
     setState(prev => ({
       ...prev,
-      expandedNodes: new Set([...prev.expandedNodes, nodeId])
+      selectedGroup: groupId,
+      selectedVideo: null,
+      currentPage: 1,
+      selectedFrames: new Set(),
     }));
-  }, []);
+  }, [urlSync]);
 
-  const collapseNode = useCallback((nodeId: string) => {
+  const selectVideo = useCallback((videoId: string | null) => {
+    if (videoId && state.selectedGroup) {
+      urlSync.navigateToVideo(state.selectedGroup, videoId);
+    } else {
+      urlSync.clearVideo();
+    }
+    
+    setState(prev => ({
+      ...prev,
+      selectedVideo: videoId,
+      currentPage: 1,
+      selectedFrames: new Set(),
+    }));
+  }, [urlSync, state.selectedGroup]);
+
+  // Pagination actions
+  const navigateToPage = useCallback((page: number) => {
+    urlSync.navigateToPage(page);
+    setState(prev => ({
+      ...prev,
+      currentPage: page
+    }));
+  }, [urlSync]);
+
+  const nextPage = useCallback(() => {
+    if (currentVideoFrames.data?.pagination.hasNext) {
+      const nextPageNum = state.currentPage + 1;
+      navigateToPage(nextPageNum);
+    }
+  }, [currentVideoFrames.data?.pagination.hasNext, state.currentPage, navigateToPage]);
+
+  const prevPage = useCallback(() => {
+    if (currentVideoFrames.data?.pagination.hasPrev) {
+      const prevPageNum = state.currentPage - 1;
+      navigateToPage(prevPageNum);
+    }
+  }, [currentVideoFrames.data?.pagination.hasPrev, state.currentPage, navigateToPage]);
+
+  const toggleNodeExpansion = useCallback((nodeId: string) => {
     setState(prev => {
       const newExpanded = new Set(prev.expandedNodes);
-      newExpanded.delete(nodeId);
+      
+      if (newExpanded.has(nodeId)) {
+        newExpanded.delete(nodeId);
+      } else {
+        newExpanded.add(nodeId);
+        
+        // If expanding a group, select it to trigger video loading
+        if (nodeId.match(/^L\d+$/)) {
+          // Set as loading while data fetches
+          setState(current => ({
+            ...current,
+            loadingNodes: new Set([...current.loadingNodes, nodeId])
+          }));
+        }
+      }
+      
       return {
         ...prev,
         expandedNodes: newExpanded
@@ -122,209 +222,128 @@ export function FileBrowserProvider({ children, integration }: FileBrowserProvid
     });
   }, []);
 
-  const selectNode = useCallback((nodeId: string, multiSelect = false) => {
+  // View actions (URL-aware)
+  const setViewMode = useCallback((mode: 'grid' | 'list') => {
+    urlSync.setViewMode(mode);
+    setState(prev => ({ ...prev, viewMode: mode }));
+  }, [urlSync]);
+
+  const setThumbnailSize = useCallback((size: 'small' | 'medium' | 'large') => {
+    urlSync.setThumbnailSize(size);
+    setState(prev => ({ ...prev, thumbnailSize: size }));
+  }, [urlSync]);
+
+  const setFramesPerPage = useCallback((count: 25 | 50 | 100) => {
+    urlSync.setFramesPerPage(count);
+    setState(prev => ({ 
+      ...prev, 
+      framesPerPage: count,
+      currentPage: 1 // Reset to first page when changing page size
+    }));
+  }, [urlSync]);
+
+  // Search actions
+  const setSearchQuery = useCallback((query: string) => {
+    setState(prev => ({ ...prev, searchQuery: query }));
+  }, []);
+
+  // Selection actions
+  const selectFrame = useCallback((frameId: string, multiSelect = false) => {
     setState(prev => {
-      let newSelected = new Set(prev.selectedNodes);
+      const newSelected = new Set(prev.selectedFrames);
       
       if (multiSelect && prev.multiSelectMode) {
-        if (newSelected.has(nodeId)) {
-          newSelected.delete(nodeId);
+        if (newSelected.has(frameId)) {
+          newSelected.delete(frameId);
         } else {
-          newSelected.add(nodeId);
+          newSelected.add(frameId);
         }
       } else {
-        newSelected = new Set([nodeId]);
+        newSelected.clear();
+        newSelected.add(frameId);
       }
-
+      
       return {
         ...prev,
-        selectedNodes: newSelected,
-        lastSelectedNode: nodeId
+        selectedFrames: newSelected
       };
     });
   }, []);
 
-  const navigateToNode = useCallback((path: string[]) => {
-    const breadcrumbs: BreadcrumbItem[] = [
-      { id: 'root', name: 'Files', type: 'root', path: [] }
-    ];
-
-    for (let i = 0; i < path.length; i++) {
-      const currentPath = path.slice(0, i + 1);
-      const nodeId = currentPath.join('_');
-      
-      let name = path[i];
-      let type: 'root' | 'group' | 'video' = 'group';
-      
-      if (i === 1) type = 'video';
-      
-      breadcrumbs.push({
-        id: nodeId,
-        name,
-        type,
-        path: currentPath
-      });
-    }
-
-    setState(prev => ({
-      ...prev,
-      currentPath: path,
-      breadcrumbs
-    }));
-  }, []);
-
-  // Search actions
-  const setSearchQuery = useCallback(
-    debounce((query: string) => {
-      setState(prev => ({
-        ...prev,
-        searchQuery: query
-      }));
-    }, 300),
-    []
-  );
-
-  const applyFilters = useCallback((filters: Partial<FileFilters>) => {
-    setState(prev => ({
-      ...prev,
-      activeFilters: {
-        ...prev.activeFilters,
-        ...filters
-      }
-    }));
-  }, []);
-
-  const clearFilters = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      activeFilters: {}
-    }));
-  }, []);
-
-  // View actions
-  const setViewMode = useCallback((mode: 'grid' | 'list') => {
-    setState(prev => ({
-      ...prev,
-      viewMode: mode
-    }));
-  }, []);
-
-  const setThumbnailSize = useCallback((size: 'small' | 'medium' | 'large') => {
-    setState(prev => ({
-      ...prev,
-      thumbnailSize: size
-    }));
-  }, []);
-
-  const setSortBy = useCallback((sortBy: string, direction: 'asc' | 'desc' = 'asc') => {
-    setState(prev => ({
-      ...prev,
-      sortBy,
-      sortDirection: direction
-    }));
-
-    // Tree data will automatically refetch with new sort order due to dependency on state.sortBy
-  }, []);
-
-  // Multi-select actions
   const toggleMultiSelect = useCallback(() => {
     setState(prev => ({
       ...prev,
       multiSelectMode: !prev.multiSelectMode,
-      selectedNodes: prev.multiSelectMode ? new Set() : prev.selectedNodes
+      selectedFrames: new Set() // Clear selection when toggling mode
     }));
   }, []);
-
-  const selectAll = useCallback(() => {
-    if (!treeData) return;
-
-    const allNodeIds = new Set<string>();
-    
-    const addNodeIds = (nodes: TreeNode[]) => {
-      nodes.forEach(node => {
-        allNodeIds.add(node.id);
-        if (node.children) {
-          addNodeIds(node.children);
-        }
-      });
-    };
-
-    addNodeIds(treeData.groups);
-
-    setState(prev => ({
-      ...prev,
-      selectedNodes: allNodeIds
-    }));
-  }, [treeData]);
 
   const clearSelection = useCallback(() => {
     setState(prev => ({
       ...prev,
-      selectedNodes: new Set(),
-      lastSelectedNode: null
+      selectedFrames: new Set()
     }));
   }, []);
 
-  // Add prefetching on hover for better UX
-  const handleNodeHover = useCallback((node: TreeNode) => {
-    if (node.type === 'group') {
-      const groupNode = node as GroupNode;
-      prefetch.prefetchGroup(groupNode.groupId);
-    } else if (node.type === 'video') {
-      const videoNode = node as VideoNode;
-      prefetch.prefetchVideo(videoNode.groupId, videoNode.videoId);
+  // Performance optimization: prefetch on hover
+  const prefetchOnHover = useCallback((
+    type: 'group' | 'video', 
+    groupId: string, 
+    videoId?: string
+  ) => {
+    if (type === 'group') {
+      prefetch.prefetchGroupVideos(groupId);
+    } else if (type === 'video' && videoId) {
+      prefetch.prefetchVideoFrames(groupId, videoId);
     }
   }, [prefetch]);
 
-  // Integration callbacks
-  const handleFrameSelect = useCallback((frames: FileMetadata[]) => {
-    integration?.onFrameSelect?.(frames);
-  }, [integration]);
-
-  const handleSimilaritySearch = useCallback((frameId: string) => {
-    integration?.onSimilaritySearch?.(frameId);
-  }, [integration]);
-
-  const handleAddToCanvas = useCallback((frame: FileMetadata) => {
-    integration?.onAddToCanvas?.(frame);
-  }, [integration]);
+  // Remove loading state when data loads successfully
+  React.useEffect(() => {
+    if (state.selectedGroup && !currentGroupVideos.isLoading) {
+      setState(prev => {
+        const newLoading = new Set(prev.loadingNodes);
+        newLoading.delete(state.selectedGroup || '');
+        return {
+          ...prev,
+          loadingNodes: newLoading
+        };
+      });
+    }
+  }, [state.selectedGroup, currentGroupVideos.isLoading]);
 
   const contextValue: FileBrowserContextType = {
     // State
     state,
-    treeData,
-    isLoading,
-    error,
     
-    // Actions
-    expandNode,
-    collapseNode,
-    selectNode,
-    navigateToNode,
+    // Data queries
+    groupsData,
+    currentGroupVideos,
+    currentVideoFrames,
     
-    // Search actions
-    setSearchQuery,
-    applyFilters,
-    clearFilters,
+    // Navigation actions
+    selectGroup,
+    selectVideo,
+    toggleNodeExpansion,
+    navigateToPage,
+    nextPage,
+    prevPage,
     
     // View actions
     setViewMode,
     setThumbnailSize,
-    setSortBy,
+    setFramesPerPage,
     
-    // Multi-select actions
+    // Search actions
+    setSearchQuery,
+    
+    // Selection actions
+    selectFrame,
     toggleMultiSelect,
-    selectAll,
     clearSelection,
     
-    // Integration hooks
-    onFrameSelect: handleFrameSelect,
-    onSimilaritySearch: handleSimilaritySearch,
-    onAddToCanvas: handleAddToCanvas,
-    
-    // Performance hooks
-    onNodeHover: handleNodeHover,
-    refreshData: refetchTree
+    // Performance actions
+    prefetchOnHover,
   };
 
   return (
@@ -333,3 +352,12 @@ export function FileBrowserProvider({ children, integration }: FileBrowserProvid
     </FileBrowserContext.Provider>
   );
 }
+
+// Export types for components
+export type {
+  FileBrowserState,
+  FileBrowserContextType,
+  GroupSummary,
+  VideoSummary,
+  FrameData,
+};

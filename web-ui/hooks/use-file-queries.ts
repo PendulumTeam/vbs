@@ -1,389 +1,331 @@
 /**
- * File Browser Query Hooks using TanStack Query
+ * Progressive File Browser Query Hooks - Three-Tier Loading Architecture
  * 
- * Provides type-safe, cached data fetching for the video browser system.
- * Includes optimistic updates, background refetching, and error handling.
+ * Tier 1: Groups Overview (always fast)
+ * Tier 2: Group Videos (on-demand)
+ * Tier 3: Video Frames (lazy loaded with pagination)
  */
 
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { queryKeys } from '@/lib/query-keys';
-import { 
-  TreeResponse, 
-  GroupResponse, 
-  VideoResponse, 
-  SearchRequest,
-  SearchResponse,
-  FileFilters,
-  FileMetadata 
-} from '@/lib/file-browser-types';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-// API Base URL - could be environment variable
-const API_BASE = '/api/files';
+// Updated query keys for progressive loading
+export const progressiveQueryKeys = {
+  // Tier 1: Groups overview
+  groups: {
+    all: () => ['files', 'groups'] as const,
+    list: (params?: { sort?: string; limit?: number }) => 
+      [...progressiveQueryKeys.groups.all(), 'list', params] as const,
+  },
+  
+  // Tier 2: Videos for specific group  
+  groupVideos: {
+    all: () => ['files', 'group-videos'] as const,
+    byGroup: (groupId: string, params?: { sort?: string; includeSample?: boolean }) =>
+      [...progressiveQueryKeys.groupVideos.all(), groupId, params] as const,
+  },
+  
+  // Tier 3: Frames for specific video
+  videoFrames: {
+    all: () => ['files', 'video-frames'] as const,
+    byVideo: (groupId: string, videoId: string, params?: { 
+      page?: number; 
+      limit?: number; 
+      sort?: string; 
+    }) => [...progressiveQueryKeys.videoFrames.all(), groupId, videoId, params] as const,
+    stats: (groupId: string, videoId: string) =>
+      [...progressiveQueryKeys.videoFrames.all(), groupId, videoId, 'stats'] as const,
+  },
+} as const;
 
-/**
- * HTTP client with error handling
- */
-async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-  
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    ...options,
-  });
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ 
-      message: response.statusText 
-    }));
-    
-    const error = new Error(errorData.message || 'API request failed') as any;
-    error.status = response.status;
-    error.data = errorData;
-    throw error;
-  }
-  
-  return response.json();
+// Response types for new API structure
+interface GroupSummary {
+  id: string;
+  name: string;
+  videoCount: number;
+  totalFrames: number;
+  totalSize: number;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+}
+
+interface GroupsResponse {
+  groups: GroupSummary[];
+  totalGroups: number;
+  totalVideos: number;
+  totalFrames: number;
+  totalSize: number;
+}
+
+interface VideoSummary {
+  id: string;
+  name: string;
+  frameCount: number;
+  totalSize: number;
+  averageFrameSize: number;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  sampleFrame?: {
+    s3_key: string;
+    public_url: string;
+  };
+}
+
+interface GroupVideosResponse {
+  group: {
+    id: string;
+    name: string;
+  };
+  videos: VideoSummary[];
+  totalVideos: number;
+  totalFrames: number;
+  totalSize: number;
+}
+
+interface FrameData {
+  id: string;
+  name: string;
+  frameNumber: number;
+  url: string;
+  fileSize: number;
+  uploadDate: string;
+  s3Key: string;
+  fileHash: string;
+}
+
+interface VideoFramesResponse {
+  video: {
+    groupId: string;
+    videoId: string;
+    name: string;
+  };
+  frames: FrameData[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+  };
 }
 
 /**
- * Tree Structure Queries
+ * Tier 1: Groups Overview Query (Always Fast - <500ms)
+ * Load all groups with basic metadata, no frame data
  */
-export function useTreeQuery(params?: {
-  expand?: string[];
-  limit?: number;
+export function useGroupsQuery(params?: {
   sort?: string;
+  limit?: number;
 }) {
   return useQuery({
-    queryKey: queryKeys.tree.list(params),
-    queryFn: () => {
+    queryKey: progressiveQueryKeys.groups.list(params),
+    queryFn: async () => {
       const searchParams = new URLSearchParams();
-      if (params?.expand) searchParams.set('expand', params.expand.join(','));
-      if (params?.limit) searchParams.set('limit', params.limit.toString());
       if (params?.sort) searchParams.set('sort', params.sort);
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
       
-      const query = searchParams.toString();
-      return fetchAPI<TreeResponse>(`/tree${query ? `?${query}` : ''}`);
+      const response = await fetch(`/api/files/groups?${searchParams}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch groups: ${response.statusText}`);
+      }
+      
+      return response.json() as Promise<GroupsResponse>;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes - tree structure doesn't change frequently
-    gcTime: 10 * 60 * 1000,   // Keep in cache for 10 minutes
+    staleTime: 30 * 60 * 1000, // 30 minutes - groups structure rarely changes
+    gcTime: 60 * 60 * 1000,    // 1 hour in cache
   });
 }
 
 /**
- * Tree statistics (quick overview)
+ * Tier 2: Group Videos Query (On-Demand - <200ms)
+ * Load videos for specific group when expanded
  */
-export function useTreeStatsQuery() {
-  return useQuery({
-    queryKey: queryKeys.tree.stats(),
-    queryFn: () => fetchAPI('/tree/stats', { method: 'HEAD' }),
-    staleTime: 2 * 60 * 1000, // 2 minutes for stats
-  });
-}
-
-/**
- * Group-specific queries
- */
-export function useGroupQuery(
+export function useGroupVideosQuery(
   groupId: string,
   params?: {
-    page?: number;
-    limit?: number;
     sort?: string;
-    includeFrames?: boolean;
-  }
-) {
-  return useQuery({
-    queryKey: queryKeys.groups.detail(groupId, params),
-    queryFn: () => {
-      const searchParams = new URLSearchParams();
-      if (params?.page) searchParams.set('page', params.page.toString());
-      if (params?.limit) searchParams.set('limit', params.limit.toString());
-      if (params?.sort) searchParams.set('sort', params.sort);
-      if (params?.includeFrames) searchParams.set('includeFrames', 'true');
-      
-      const query = searchParams.toString();
-      return fetchAPI<GroupResponse>(`/group/${groupId}${query ? `?${query}` : ''}`);
-    },
-    enabled: !!groupId,
-    staleTime: 3 * 60 * 1000, // 3 minutes for group data
-  });
-}
-
-/**
- * Group statistics
- */
-export function useGroupStatsQuery(groupId: string) {
-  return useQuery({
-    queryKey: queryKeys.groups.stats(groupId),
-    queryFn: () => fetchAPI(`/group/${groupId}/stats`, { method: 'HEAD' }),
-    enabled: !!groupId,
-    staleTime: 2 * 60 * 1000,
-  });
-}
-
-/**
- * Video-specific queries
- */
-export function useVideoQuery(
-  groupId: string,
-  videoId: string,
-  params?: {
-    page?: number;
-    limit?: number;
-    sort?: string;
-    frameRange?: string;
-  }
-) {
-  return useQuery({
-    queryKey: queryKeys.videos.detail(groupId, videoId, params),
-    queryFn: () => {
-      const searchParams = new URLSearchParams();
-      if (params?.page) searchParams.set('page', params.page.toString());
-      if (params?.limit) searchParams.set('limit', params.limit.toString());
-      if (params?.sort) searchParams.set('sort', params.sort);
-      if (params?.frameRange) searchParams.set('frameRange', params.frameRange);
-      
-      const query = searchParams.toString();
-      return fetchAPI<VideoResponse>(`/video/${groupId}/${videoId}${query ? `?${query}` : ''}`);
-    },
-    enabled: !!groupId && !!videoId,
-    staleTime: 5 * 60 * 1000, // 5 minutes for video frame data
-  });
-}
-
-/**
- * Video timeline (for navigation)
- */
-export function useVideoTimelineQuery(
-  groupId: string,
-  videoId: string,
-  intervals: number = 10
-) {
-  return useQuery({
-    queryKey: queryKeys.videos.timeline(groupId, videoId, intervals),
-    queryFn: () => fetchAPI(`/video/${groupId}/${videoId}/timeline`, {
-      method: 'POST',
-      body: JSON.stringify({ intervals }),
-    }),
-    enabled: !!groupId && !!videoId,
-    staleTime: 10 * 60 * 1000, // 10 minutes for timeline data
-  });
-}
-
-/**
- * Infinite query for video frames (for pagination)
- */
-export function useInfiniteVideoFramesQuery(
-  groupId: string,
-  videoId: string,
-  params?: {
-    limit?: number;
-    sort?: string;
-  }
-) {
-  return useInfiniteQuery({
-    queryKey: [...queryKeys.videos.frames(groupId, videoId), params],
-    queryFn: ({ pageParam = 1 }) => {
-      const searchParams = new URLSearchParams();
-      searchParams.set('page', pageParam.toString());
-      if (params?.limit) searchParams.set('limit', params.limit.toString());
-      if (params?.sort) searchParams.set('sort', params.sort);
-      
-      return fetchAPI<VideoResponse>(`/video/${groupId}/${videoId}?${searchParams}`);
-    },
-    getNextPageParam: (lastPage) => {
-      const { pagination } = lastPage;
-      return pagination.hasNext ? pagination.page + 1 : undefined;
-    },
-    enabled: !!groupId && !!videoId,
-    staleTime: 5 * 60 * 1000,
-    initialPageParam: 1,
-  });
-}
-
-/**
- * Search queries
- */
-export function useSearchQuery(
-  request: SearchRequest,
+    includeSample?: boolean;
+  },
   options?: {
     enabled?: boolean;
   }
 ) {
   return useQuery({
-    queryKey: queryKeys.search.results(request),
-    queryFn: () => fetchAPI<SearchResponse>('/search', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    }),
-    enabled: options?.enabled !== false && !!request.query?.trim(),
-    staleTime: 1 * 60 * 1000, // 1 minute for search results
-    gcTime: 5 * 60 * 1000,    // Keep search results for 5 minutes
+    queryKey: progressiveQueryKeys.groupVideos.byGroup(groupId, params),
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      if (params?.sort) searchParams.set('sort', params.sort);
+      if (params?.includeSample) searchParams.set('includeSample', 'true');
+      
+      const response = await fetch(`/api/files/groups/${groupId}/videos?${searchParams}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch videos for group ${groupId}: ${response.statusText}`);
+      }
+      
+      return response.json() as Promise<GroupVideosResponse>;
+    },
+    enabled: options?.enabled !== false && !!groupId,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 20 * 60 * 1000,    // 20 minutes in cache
   });
 }
 
 /**
- * Search suggestions with debouncing
+ * Tier 3: Video Frames Query (Lazy Loaded - <300ms)
+ * Load actual frame data with pagination when video expanded
  */
-export function useSearchSuggestionsQuery(query: string, limit?: number) {
+export function useVideoFramesQuery(
+  groupId: string,
+  videoId: string,
+  params?: {
+    page?: number;
+    limit?: number;
+    sort?: string;
+  },
+  options?: {
+    enabled?: boolean;
+  }
+) {
   return useQuery({
-    queryKey: queryKeys.search.suggestions(query, limit),
-    queryFn: () => {
-      const searchParams = new URLSearchParams({ q: query });
-      if (limit) searchParams.set('limit', limit.toString());
+    queryKey: progressiveQueryKeys.videoFrames.byVideo(groupId, videoId, params),
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      if (params?.page) searchParams.set('page', params.page.toString());
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
+      if (params?.sort) searchParams.set('sort', params.sort);
       
-      return fetchAPI(`/search/suggestions?${searchParams}`);
+      const response = await fetch(
+        `/api/files/groups/${groupId}/videos/${videoId}/frames?${searchParams}`
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch frames for ${groupId}_${videoId}: ${response.statusText}`);
+      }
+      
+      return response.json() as Promise<VideoFramesResponse>;
     },
-    enabled: !!query && query.length >= 2,
-    staleTime: 30 * 1000, // 30 seconds for suggestions
-    gcTime: 2 * 60 * 1000, // 2 minutes cache
+    enabled: options?.enabled !== false && !!groupId && !!videoId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000,   // 10 minutes in cache
   });
 }
 
 /**
- * Prefetch utilities for performance optimization
+ * Video statistics (quick metadata without frame loading)
  */
-export function usePrefetchQueries() {
-  const queryClient = useQueryClient();
-  
-  return {
-    /**
-     * Prefetch group data when hovering over group in tree
-     */
-    prefetchGroup: (groupId: string) => {
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.groups.detail(groupId, { includeFrames: false }),
-        queryFn: () => fetchAPI<GroupResponse>(`/group/${groupId}?includeFrames=false`),
-        staleTime: 3 * 60 * 1000,
-      });
-    },
-    
-    /**
-     * Prefetch video data when hovering over video in group
-     */
-    prefetchVideo: (groupId: string, videoId: string) => {
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.videos.detail(groupId, videoId, { limit: 20 }),
-        queryFn: () => fetchAPI<VideoResponse>(`/video/${groupId}/${videoId}?limit=20`),
-        staleTime: 5 * 60 * 1000,
-      });
-    },
-    
-    /**
-     * Prefetch next page of frames
-     */
-    prefetchNextFrames: (groupId: string, videoId: string, currentPage: number) => {
-      const nextPage = currentPage + 1;
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.videos.detail(groupId, videoId, { page: nextPage }),
-        queryFn: () => fetchAPI<VideoResponse>(`/video/${groupId}/${videoId}?page=${nextPage}`),
-        staleTime: 5 * 60 * 1000,
-      });
-    },
-  };
-}
-
-/**
- * Cache management utilities
- */
-export function useCacheManagement() {
-  const queryClient = useQueryClient();
-  
-  return {
-    /**
-     * Manually refresh tree data
-     */
-    refreshTree: () => {
-      return queryClient.invalidateQueries({ 
-        queryKey: queryKeys.tree.all() 
-      });
-    },
-    
-    /**
-     * Clear search cache (useful when filters change)
-     */
-    clearSearchCache: () => {
-      queryClient.removeQueries({ 
-        queryKey: queryKeys.search.all() 
-      });
-    },
-    
-    /**
-     * Optimistically update cache after mutations
-     */
-    updateCacheAfterMutation: (
-      entityType: 'group' | 'video' | 'frame',
-      entityId: string,
-      updateFn: (oldData: any) => any
-    ) => {
-      // Implementation would depend on specific mutation types
-      // This is a placeholder for future mutation support
-      console.log('Cache update after mutation:', { entityType, entityId });
-    },
-    
-    /**
-     * Get cache statistics for debugging
-     */
-    getCacheStats: () => {
-      const cache = queryClient.getQueryCache();
-      const queries = cache.getAll();
-      
-      return {
-        total: queries.length,
-        byStatus: queries.reduce((acc, query) => {
-          const status = query.state.status;
-          acc[status] = (acc[status] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        totalMemoryUsage: queries.reduce((acc, query) => {
-          return acc + (JSON.stringify(query.state.data || {}).length);
-        }, 0),
-      };
-    },
-  };
-}
-
-/**
- * Error recovery utilities
- */
-export function useErrorRecovery() {
-  const queryClient = useQueryClient();
-  
-  return {
-    /**
-     * Retry failed queries
-     */
-    retryFailedQueries: () => {
-      const failedQueries = queryClient.getQueryCache().findAll({
-        type: 'active',
-        stale: true,
-      });
-      
-      return Promise.all(
-        failedQueries.map(query => queryClient.refetchQueries({
-          queryKey: query.queryKey
-        }))
+export function useVideoStatsQuery(
+  groupId: string,
+  videoId: string,
+  options?: {
+    enabled?: boolean;
+  }
+) {
+  return useQuery({
+    queryKey: progressiveQueryKeys.videoFrames.stats(groupId, videoId),
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/files/groups/${groupId}/videos/${videoId}/frames/stats`,
+        { method: 'HEAD' }
       );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch stats for ${groupId}_${videoId}: ${response.statusText}`);
+      }
+      
+      return response.json();
+    },
+    enabled: options?.enabled !== false && !!groupId && !!videoId,
+    staleTime: 10 * 60 * 1000, // 10 minutes for stats
+  });
+}
+
+/**
+ * Prefetch utilities for smooth UX
+ */
+export function useProgressivePrefetch() {
+  const queryClient = useQueryClient();
+  
+  return {
+    /**
+     * Prefetch group videos when hovering over group
+     */
+    prefetchGroupVideos: (groupId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: progressiveQueryKeys.groupVideos.byGroup(groupId, { includeSample: true }),
+        queryFn: async () => {
+          const response = await fetch(`/api/files/groups/${groupId}/videos?includeSample=true`);
+          return response.json();
+        },
+        staleTime: 10 * 60 * 1000,
+      });
     },
     
     /**
-     * Reset error state for specific query
+     * Prefetch first page of frames when hovering over video
      */
-    resetQueryError: (queryKey: readonly unknown[]) => {
-      queryClient.resetQueries({ queryKey });
-    },
-    
-    /**
-     * Force refetch when coming back online
-     */
-    refetchOnReconnect: () => {
-      queryClient.refetchQueries({
-        type: 'active',
-        stale: true,
+    prefetchVideoFrames: (groupId: string, videoId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: progressiveQueryKeys.videoFrames.byVideo(groupId, videoId, { page: 1, limit: 50 }),
+        queryFn: async () => {
+          const response = await fetch(`/api/files/groups/${groupId}/videos/${videoId}/frames?page=1&limit=50`);
+          return response.json();
+        },
+        staleTime: 5 * 60 * 1000,
       });
     },
   };
 }
+
+/**
+ * Cache management for progressive loading
+ */
+export function useProgressiveCacheManagement() {
+  const queryClient = useQueryClient();
+  
+  return {
+    /**
+     * Invalidate group cache when videos are modified
+     */
+    invalidateGroup: (groupId: string) => {
+      // Invalidate both groups overview and specific group videos
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: progressiveQueryKeys.groups.all() }),
+        queryClient.invalidateQueries({ queryKey: progressiveQueryKeys.groupVideos.byGroup(groupId) }),
+      ]);
+    },
+    
+    /**
+     * Invalidate video cache when frames are modified
+     */
+    invalidateVideo: (groupId: string, videoId: string) => {
+      // Invalidate video frames and parent group
+      return Promise.all([
+        queryClient.invalidateQueries({ 
+          queryKey: progressiveQueryKeys.videoFrames.byVideo(groupId, videoId) 
+        }),
+        queryClient.invalidateQueries({ 
+          queryKey: progressiveQueryKeys.groupVideos.byGroup(groupId) 
+        }),
+      ]);
+    },
+    
+    /**
+     * Clear all caches (memory management)
+     */
+    clearAllCaches: () => {
+      queryClient.clear();
+    },
+  };
+}
+
+// Export types for components
+export type {
+  GroupSummary,
+  GroupsResponse,
+  VideoSummary,
+  GroupVideosResponse,
+  FrameData,
+  VideoFramesResponse,
+};
