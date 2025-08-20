@@ -21,10 +21,17 @@ export function Navigation() {
     },
     {
       href: '/files',
+      label: 'File Browser (Old)',
+      icon: Database,
+      description: 'Original Implementation',
+      badge: 'Slow'
+    },
+    {
+      href: '/files-progressive',
       label: 'File Browser',
       icon: Database,
-      description: 'Browse Video Frames',
-      badge: 'New'
+      description: 'Progressive Loading',
+      badge: 'Fast'
     },
     {
       href: '/search',
