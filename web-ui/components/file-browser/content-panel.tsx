@@ -2,12 +2,12 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { 
-  Grid, 
-  List, 
-  Search, 
-  Filter, 
-  Download, 
+import {
+  Grid,
+  List,
+  Search,
+  Filter,
+  Download,
   MoreHorizontal,
   Home,
   ChevronRight,
@@ -27,7 +27,7 @@ import { useFileBrowser, GroupSummary, VideoSummary, FrameData } from '@/hooks/u
 
 /**
  * Progressive Content Panel - Context-aware display based on selection level
- * 
+ *
  * Level 1: Groups overview (when no group selected)
  * Level 2: Videos in group (when group selected but no video)
  * Level 3: Frames in video (when video selected)
@@ -63,7 +63,7 @@ export function ContentPanel() {
         error: groupsData.error
       };
     }
-    
+
     if (!state.selectedVideo) {
       return {
         level: 'videos' as const,
@@ -73,7 +73,7 @@ export function ContentPanel() {
         error: currentGroupVideos.error
       };
     }
-    
+
     return {
       level: 'frames' as const,
       title: `${state.selectedGroup} › ${state.selectedVideo}`,
@@ -91,7 +91,7 @@ export function ContentPanel() {
     const handleKeyDown = (event: KeyboardEvent) => {
       // Only handle keyboard navigation when viewing frames
       if (currentContent.level !== 'frames' || !currentContent.pagination) return;
-      
+
       // Ignore if user is typing in an input field
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
@@ -159,17 +159,17 @@ export function ContentPanel() {
     const units = ['B', 'KB', 'MB', 'GB'];
     let size = bytes;
     let unitIndex = 0;
-    
+
     while (size >= 1024 && unitIndex < units.length - 1) {
       size /= 1024;
       unitIndex++;
     }
-    
+
     return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   };
 
   // Render item based on content level
-  const renderItem = (item: GroupSummary | VideoSummary | FrameData) => {
+  const renderItem = (item: GroupSummary | VideoSummary | FrameData, index: number) => {
     // Type-safe ID extraction based on content level
     let itemId: string;
     if (currentContent.level === 'groups') {
@@ -179,9 +179,9 @@ export function ContentPanel() {
     } else {
       itemId = (item as FrameData).name;
     }
-    
+
     const isSelected = state.selectedFrames.has(itemId);
-    
+
     return (
       <div
         key={itemId}
@@ -196,28 +196,31 @@ export function ContentPanel() {
         onClick={() => handleItemClick(item)}
       >
         {/* Thumbnail/Icon */}
-        <div className="relative flex-1 bg-muted flex items-center justify-center">
+        <div className="absolute inset-x-0 top-0 bottom-12 bg-muted overflow-hidden">
           {currentContent.level === 'frames' ? (
             // Frame thumbnail
-            <Image
-              src={(item as FrameData).url}
-              alt={`Frame ${(item as FrameData).name}`}
-              fill
-              className="object-cover"
-              loading="lazy"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                const nextElement = target.nextElementSibling as HTMLElement;
-                nextElement?.classList.remove('hidden');
-              }}
-            />
+            <div className="relative w-full h-full">
+              <Image
+                src={(item as FrameData).url}
+                alt={`Frame ${(item as FrameData).name}`}
+                fill
+                className="object-cover"
+                priority={false}
+                loading="lazy"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const nextElement = target.nextElementSibling as HTMLElement;
+                  nextElement?.classList.remove('hidden');
+                }}
+              />
+            </div>
           ) : (
             // Icon for groups/videos
-            <div className="text-center">
-              <div className={`w-16 h-16 mx-auto mb-2 rounded-lg flex items-center justify-center ${
-                currentContent.level === 'groups' 
-                  ? 'bg-blue-100' 
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className={`w-16 h-16 mb-2 rounded-lg flex items-center justify-center ${
+                currentContent.level === 'groups'
+                  ? 'bg-blue-100'
                   : 'bg-green-100'
               }`}>
                 {currentContent.level === 'groups' ? (
@@ -226,19 +229,19 @@ export function ContentPanel() {
                   <Play className="w-8 h-8 text-green-600" />
                 )}
               </div>
-              
+
               {/* Stats badge */}
               <Badge variant="secondary" className="text-xs">
-                {currentContent.level === 'groups' 
+                {currentContent.level === 'groups'
                   ? `${(item as GroupSummary).videoCount} videos`
                   : `${(item as VideoSummary).frameCount} frames`
                 }
               </Badge>
             </div>
           )}
-          
+
           {/* Error placeholder */}
-          <div className="absolute inset-0 bg-muted items-center justify-center" style={{ display: 'none' }}>
+          <div className="absolute inset-0 bg-muted flex items-center justify-center" style={{ display: 'none' }}>
             <ImageIcon className="w-8 h-8 text-muted-foreground" />
           </div>
 
@@ -258,28 +261,28 @@ export function ContentPanel() {
         </div>
 
         {/* Info Panel */}
-        <div className="p-3">
+        <div className="absolute bottom-0 inset-x-0 p-3 bg-card">
           <div className="font-medium text-sm truncate mb-1">
-            {currentContent.level === 'frames' 
-              ? (item as FrameData).name 
+            {currentContent.level === 'frames'
+              ? (item as FrameData).name
               : (item as GroupSummary | VideoSummary).id}
           </div>
           <div className="text-xs text-muted-foreground">
             {currentContent.level === 'groups' && (
               <>
-                {formatSize((item as GroupSummary).totalSize)} • 
+                {formatSize((item as GroupSummary).totalSize)} •
                 {(item as GroupSummary).totalFrames.toLocaleString()} frames
               </>
             )}
             {currentContent.level === 'videos' && (
               <>
-                {formatSize((item as VideoSummary).totalSize)} • 
+                {formatSize((item as VideoSummary).totalSize)} •
                 {(item as VideoSummary).frameCount} frames
               </>
             )}
             {currentContent.level === 'frames' && (
               <>
-                {formatSize((item as FrameData).fileSize)} • 
+                {formatSize((item as FrameData).fileSize)} •
                 Frame #{(item as FrameData).frameNumber}
               </>
             )}
@@ -301,7 +304,7 @@ export function ContentPanel() {
           >
             <Home className="w-4 h-4" />
           </button>
-          
+
           {state.selectedGroup && (
             <>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -313,7 +316,7 @@ export function ContentPanel() {
               </button>
             </>
           )}
-          
+
           {state.selectedVideo && (
             <>
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -342,8 +345,8 @@ export function ContentPanel() {
             {currentContent.level === 'frames' && (
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search frames..." 
+                <Input
+                  placeholder="Search frames..."
                   className="pl-9 w-48"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
@@ -410,8 +413,8 @@ export function ContentPanel() {
               <div className="text-destructive text-xl mb-4">⚠️</div>
               <h3 className="text-lg font-medium mb-2">Failed to Load</h3>
               <p className="text-muted-foreground mb-4">
-                {currentContent.error instanceof Error 
-                  ? currentContent.error.message 
+                {currentContent.error instanceof Error
+                  ? currentContent.error.message
                   : 'Unknown error occurred'
                 }
               </p>
@@ -438,7 +441,7 @@ export function ContentPanel() {
           {!currentContent.isLoading && !currentContent.error && currentContent.items.length > 0 && (
             <div>
               {state.viewMode === 'grid' ? (
-                <div 
+                <div
                   className={`
                     grid gap-4
                     ${state.thumbnailSize === 'small' ? 'grid-cols-6 lg:grid-cols-8' : ''}
@@ -446,24 +449,24 @@ export function ContentPanel() {
                     ${state.thumbnailSize === 'large' ? 'grid-cols-2 lg:grid-cols-4' : ''}
                   `}
                 >
-                  {currentContent.items.map(item => renderItem(item))}
+                  {currentContent.items.map((item, index) => renderItem(item, index))}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {currentContent.items.map(item => renderListItem(item))}
+                  {currentContent.items.map((item, index) => renderListItem(item, index))}
                 </div>
               )}
-              
+
               {/* Enhanced Pagination for frames */}
               {currentContent.level === 'frames' && currentContent.pagination && (
                 <div className="mt-6 pt-4 border-t space-y-4">
                   {/* Pagination Info */}
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-muted-foreground">
-                      Page {currentContent.pagination.page} of {currentContent.pagination.totalPages} 
+                      Page {currentContent.pagination.page} of {currentContent.pagination.totalPages}
                       ({currentContent.pagination.total} total frames)
                     </div>
-                    
+
                     {/* Frames per page selector */}
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">Show:</span>
@@ -479,12 +482,12 @@ export function ContentPanel() {
                       <span className="text-sm text-muted-foreground">per page</span>
                     </div>
                   </div>
-                  
+
                   {/* Pagination Controls */}
                   <div className="flex items-center justify-between">
                     {/* Left side - Previous */}
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       disabled={!currentContent.pagination.hasPrev}
                       onClick={prevPage}
@@ -519,7 +522,7 @@ export function ContentPanel() {
                           currentContent.pagination!.totalPages - 4
                         ));
                         const pageNum = startPage + i;
-                        
+
                         if (pageNum <= currentContent.pagination!.totalPages) {
                           return (
                             <Button
@@ -553,8 +556,8 @@ export function ContentPanel() {
                     </div>
 
                     {/* Right side - Next */}
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       disabled={!currentContent.pagination.hasNext}
                       onClick={nextPage}
@@ -567,8 +570,8 @@ export function ContentPanel() {
 
                   {/* Share URL */}
                   <div className="flex items-center justify-center">
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText(window.location.href);
@@ -589,11 +592,11 @@ export function ContentPanel() {
 
       {/* Preview Modal */}
       {previewFrame && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={() => setPreviewFrame(null)}
         >
-          <div 
+          <div
             className="bg-card p-4 rounded-lg max-w-4xl max-h-[90vh] overflow-auto"
             onClick={(e) => e.stopPropagation()}
           >
@@ -628,7 +631,7 @@ export function ContentPanel() {
   );
 
   // Helper function to render list items
-  function renderListItem(item: GroupSummary | VideoSummary | FrameData) {
+  function renderListItem(item: GroupSummary | VideoSummary | FrameData, index: number) {
     // Type-safe ID extraction based on content level
     let itemId: string;
     if (currentContent.level === 'groups') {
@@ -638,9 +641,11 @@ export function ContentPanel() {
     } else {
       itemId = (item as FrameData).name;
     }
-    
+
     const isSelected = state.selectedFrames.has(itemId);
-    
+    // List view: prioritize first 8 items (typically visible)
+    const shouldPrioritize = currentContent.level === 'frames' && index < 8;
+
     return (
       <div
         key={itemId}
@@ -652,15 +657,18 @@ export function ContentPanel() {
         onClick={() => handleItemClick(item)}
       >
         {/* Thumbnail/Icon */}
-        <div className="w-16 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0 relative">
+        <div className="w-16 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
           {currentContent.level === 'frames' ? (
-            <Image
-              src={(item as FrameData).url}
-              alt={`Frame ${(item as FrameData).name}`}
-              fill
-              className="object-cover rounded"
-              loading="lazy"
-            />
+            <div className="relative w-full h-full">
+              <Image
+                src={(item as FrameData).url}
+                alt={`Frame ${(item as FrameData).name}`}
+                fill
+                className="object-cover rounded"
+                priority={false}
+                loading="lazy"
+              />
+            </div>
           ) : (
             <div>
               {currentContent.level === 'groups' && <Folder className="w-6 h-6 text-blue-600" />}
@@ -673,8 +681,8 @@ export function ContentPanel() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-medium text-sm truncate">
-              {currentContent.level === 'frames' 
-                ? (item as FrameData).name 
+              {currentContent.level === 'frames'
+                ? (item as FrameData).name
                 : (item as GroupSummary | VideoSummary).id}
             </span>
             <Badge variant="secondary" className="text-xs">
@@ -683,23 +691,23 @@ export function ContentPanel() {
               {currentContent.level === 'frames' && 'Frame'}
             </Badge>
           </div>
-          
+
           <div className="text-xs text-muted-foreground">
             {currentContent.level === 'groups' && (
               <>
-                {formatSize((item as GroupSummary).totalSize)} • 
+                {formatSize((item as GroupSummary).totalSize)} •
                 {(item as GroupSummary).totalFrames.toLocaleString()} frames
               </>
             )}
             {currentContent.level === 'videos' && (
               <>
-                {formatSize((item as VideoSummary).totalSize)} • 
+                {formatSize((item as VideoSummary).totalSize)} •
                 {formatSize((item as VideoSummary).averageFrameSize)}/frame
               </>
             )}
             {currentContent.level === 'frames' && (
               <>
-                Frame #{(item as FrameData).frameNumber} • 
+                Frame #{(item as FrameData).frameNumber} •
                 {formatSize((item as FrameData).fileSize)}
               </>
             )}
