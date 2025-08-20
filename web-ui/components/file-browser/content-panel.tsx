@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { 
   Grid, 
   List, 
@@ -169,7 +170,16 @@ export function ContentPanel() {
 
   // Render item based on content level
   const renderItem = (item: GroupSummary | VideoSummary | FrameData) => {
-    const itemId = 'id' in item ? item.id : 'name' in item ? item.name : '';
+    // Type-safe ID extraction based on content level
+    let itemId: string;
+    if (currentContent.level === 'groups') {
+      itemId = (item as GroupSummary).id;
+    } else if (currentContent.level === 'videos') {
+      itemId = (item as VideoSummary).id;
+    } else {
+      itemId = (item as FrameData).name;
+    }
+    
     const isSelected = state.selectedFrames.has(itemId);
     
     return (
@@ -189,10 +199,11 @@ export function ContentPanel() {
         <div className="relative flex-1 bg-muted flex items-center justify-center">
           {currentContent.level === 'frames' ? (
             // Frame thumbnail
-            <img
+            <Image
               src={(item as FrameData).url}
               alt={`Frame ${(item as FrameData).name}`}
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
               loading="lazy"
               onError={(e) => {
                 const target = e.target as HTMLImageElement;
@@ -227,7 +238,7 @@ export function ContentPanel() {
           )}
           
           {/* Error placeholder */}
-          <div className="hidden absolute inset-0 bg-muted flex items-center justify-center">
+          <div className="absolute inset-0 bg-muted items-center justify-center" style={{ display: 'none' }}>
             <ImageIcon className="w-8 h-8 text-muted-foreground" />
           </div>
 
@@ -249,7 +260,9 @@ export function ContentPanel() {
         {/* Info Panel */}
         <div className="p-3">
           <div className="font-medium text-sm truncate mb-1">
-            {'name' in item ? item.name : item.id}
+            {currentContent.level === 'frames' 
+              ? (item as FrameData).name 
+              : (item as GroupSummary | VideoSummary).id}
           </div>
           <div className="text-xs text-muted-foreground">
             {currentContent.level === 'groups' && (
@@ -362,7 +375,7 @@ export function ContentPanel() {
             {state.viewMode === 'grid' && (
               <select
                 value={state.thumbnailSize}
-                onChange={(e) => setThumbnailSize(e.target.value as any)}
+                onChange={(e) => setThumbnailSize(e.target.value as 'small' | 'medium' | 'large')}
                 className="px-3 py-1 border rounded-md text-sm"
               >
                 <option value="small">Small</option>
@@ -500,18 +513,18 @@ export function ContentPanel() {
                       )}
 
                       {/* Current page range */}
-                      {Array.from({ length: Math.min(5, currentContent.pagination.totalPages) }, (_, i) => {
+                      {currentContent.pagination && Array.from({ length: Math.min(5, currentContent.pagination.totalPages) }, (_, i) => {
                         const startPage = Math.max(1, Math.min(
-                          currentContent.pagination.page - 2,
-                          currentContent.pagination.totalPages - 4
+                          currentContent.pagination!.page - 2,
+                          currentContent.pagination!.totalPages - 4
                         ));
                         const pageNum = startPage + i;
                         
-                        if (pageNum <= currentContent.pagination.totalPages) {
+                        if (pageNum <= currentContent.pagination!.totalPages) {
                           return (
                             <Button
                               key={pageNum}
-                              variant={pageNum === currentContent.pagination.page ? "default" : "ghost"}
+                              variant={pageNum === currentContent.pagination!.page ? "default" : "ghost"}
                               size="sm"
                               onClick={() => navigateToPage(pageNum)}
                             >
@@ -523,7 +536,7 @@ export function ContentPanel() {
                       })}
 
                       {/* Last page */}
-                      {currentContent.pagination.page < currentContent.pagination.totalPages - 2 && (
+                      {currentContent.pagination && currentContent.pagination.page < currentContent.pagination.totalPages - 2 && (
                         <>
                           {currentContent.pagination.page < currentContent.pagination.totalPages - 3 && (
                             <span className="px-2 text-muted-foreground">...</span>
@@ -531,7 +544,7 @@ export function ContentPanel() {
                           <Button
                             variant={currentContent.pagination.totalPages === currentContent.pagination.page ? "default" : "ghost"}
                             size="sm"
-                            onClick={() => navigateToPage(currentContent.pagination.totalPages)}
+                            onClick={() => navigateToPage(currentContent.pagination!.totalPages)}
                           >
                             {currentContent.pagination.totalPages}
                           </Button>
@@ -584,11 +597,16 @@ export function ContentPanel() {
             className="bg-card p-4 rounded-lg max-w-4xl max-h-[90vh] overflow-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <img
-              src={previewFrame.url}
-              alt={`Frame ${previewFrame.name}`}
-              className="max-w-full max-h-full"
-            />
+            <div className="relative w-full max-h-[70vh]">
+              <Image
+                src={previewFrame.url}
+                alt={`Frame ${previewFrame.name}`}
+                width={800}
+                height={600}
+                className="w-full h-auto object-contain"
+                priority
+              />
+            </div>
             <div className="mt-4 flex justify-between items-center">
               <div>
                 <h3 className="font-medium">{previewFrame.name}</h3>
@@ -611,7 +629,16 @@ export function ContentPanel() {
 
   // Helper function to render list items
   function renderListItem(item: GroupSummary | VideoSummary | FrameData) {
-    const itemId = 'id' in item ? item.id : 'name' in item ? item.name : '';
+    // Type-safe ID extraction based on content level
+    let itemId: string;
+    if (currentContent.level === 'groups') {
+      itemId = (item as GroupSummary).id;
+    } else if (currentContent.level === 'videos') {
+      itemId = (item as VideoSummary).id;
+    } else {
+      itemId = (item as FrameData).name;
+    }
+    
     const isSelected = state.selectedFrames.has(itemId);
     
     return (
@@ -625,12 +652,13 @@ export function ContentPanel() {
         onClick={() => handleItemClick(item)}
       >
         {/* Thumbnail/Icon */}
-        <div className="w-16 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0">
+        <div className="w-16 h-12 bg-muted rounded flex items-center justify-center flex-shrink-0 relative">
           {currentContent.level === 'frames' ? (
-            <img
+            <Image
               src={(item as FrameData).url}
               alt={`Frame ${(item as FrameData).name}`}
-              className="w-full h-full object-cover rounded"
+              fill
+              className="object-cover rounded"
               loading="lazy"
             />
           ) : (
@@ -645,7 +673,9 @@ export function ContentPanel() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-medium text-sm truncate">
-              {'name' in item ? item.name : item.id}
+              {currentContent.level === 'frames' 
+                ? (item as FrameData).name 
+                : (item as GroupSummary | VideoSummary).id}
             </span>
             <Badge variant="secondary" className="text-xs">
               {currentContent.level === 'groups' && `${(item as GroupSummary).videoCount}v`}
