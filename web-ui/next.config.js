@@ -7,8 +7,10 @@ const nextConfig = {
     unoptimized: process.env.NODE_ENV === "development",
     remotePatterns: [
       {
-        protocol: "http",
-        hostname: "vbs.sgp1.digitaloceanspaces.com",
+        protocol: "https",
+        hostname: "**.digitaloceanspaces.com",
+        port: "",
+        pathname: "/**",
       },
     ],
   },

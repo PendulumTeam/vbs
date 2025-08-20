@@ -4,6 +4,7 @@ import './globals.css'
 import { QueryProvider } from '@/lib/query-provider'
 import { Toaster } from "@/components/ui/sonner";
 import { Navigation } from "@/components/navigation";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -32,6 +33,7 @@ export default function RootLayout({
             <main className="flex-1">{children}</main>
           </div>
           <Toaster />
+          <SpeedInsights />
         </QueryProvider>
       </body>
     </html>
