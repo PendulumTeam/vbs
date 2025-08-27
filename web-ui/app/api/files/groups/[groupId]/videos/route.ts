@@ -60,10 +60,11 @@ interface GroupVideosResponse {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { groupId: string } }
+  { params }: { params: Promise<{ groupId: string }> }
 ) {
+  const { groupId } = await params;
+  
   try {
-    const { groupId } = params;
     const { searchParams } = new URL(request.url);
     const sort = searchParams.get('sort') || 'name';
     const includeSample = searchParams.get('includeSample') === 'true';
@@ -187,7 +188,7 @@ export async function GET(
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error(`Error in /api/files/groups/${params.groupId}/videos:`, error);
+    console.error(`Error in /api/files/groups/${groupId}/videos:`, error);
     
     return NextResponse.json(
       { 

@@ -62,10 +62,11 @@ interface VideoFramesResponse {
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { groupId: string; videoId: string } }
+  { params }: { params: Promise<{ groupId: string; videoId: string }> }
 ) {
+  const { groupId, videoId } = await params;
+  
   try {
-    const { groupId, videoId } = params;
     const { searchParams } = new URL(request.url);
     
     const page = parseInt(searchParams.get('page') || '1', 10);
@@ -170,7 +171,7 @@ export async function GET(
     return NextResponse.json(response);
 
   } catch (error) {
-    console.error(`Error in /api/files/groups/${params.groupId}/videos/${params.videoId}/frames:`, error);
+    console.error(`Error in /api/files/groups/${groupId}/videos/${videoId}/frames:`, error);
     
     return NextResponse.json(
       { 
@@ -203,10 +204,11 @@ function getFrameSortCriteria(sortParam: string): Record<string, 1 | -1> {
  */
 export async function HEAD(
   request: NextRequest,
-  { params }: { params: { groupId: string; videoId: string } }
+  { params }: { params: Promise<{ groupId: string; videoId: string }> }
 ) {
+  const { groupId, videoId } = await params;
+  
   try {
-    const { groupId, videoId } = params;
 
     const db = await connectToDatabase();
     const collection = db.collection('file_metadata');
@@ -240,7 +242,7 @@ export async function HEAD(
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error(`Error in video stats for ${params.groupId}_${params.videoId}:`, error);
+    console.error(`Error in video stats for ${groupId}_${videoId}:`, error);
     return NextResponse.json(
       { error: 'Failed to fetch video statistics' },
       { status: 500 }

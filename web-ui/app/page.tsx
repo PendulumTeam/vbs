@@ -18,19 +18,20 @@ export default function HomePage() {
           </p>
           
           <div className="flex items-center justify-center gap-4">
-            <Link href="/files">
+            <Link href="/vbs-search">
               <Button size="lg" className="gap-2">
-                <Database className="h-5 w-5" />
-                Browse Video Frames
+                <Search className="h-5 w-5" />
+                Visual Search
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
             
-            <Button variant="outline" size="lg" disabled className="gap-2">
-              <Search className="h-5 w-5" />
-              Advanced Search
-              <Badge variant="secondary" className="ml-2">Coming Soon</Badge>
-            </Button>
+            <Link href="/files">
+              <Button variant="outline" size="lg" className="gap-2">
+                <Database className="h-5 w-5" />
+                File Browser
+              </Button>
+            </Link>
           </div>
         </div>
 
@@ -72,14 +73,14 @@ export default function HomePage() {
           </div>
 
           {/* Search Platform */}
-          <div className="p-6 bg-card rounded-lg border opacity-75">
+          <div className="p-6 bg-card rounded-lg border">
             <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <Search className="h-5 w-5 text-yellow-600" />
+              <div className="h-10 w-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <Search className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <h3 className="font-semibold">Search Platform</h3>
-                <Badge variant="outline" className="text-xs">In Development</Badge>
+                <h3 className="font-semibold">Visual Search</h3>
+                <Badge variant="default" className="text-xs">Ready</Badge>
               </div>
             </div>
             <p className="text-muted-foreground mb-4">
@@ -87,21 +88,21 @@ export default function HomePage() {
               and ML-powered similarity discovery.
             </p>
             <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2 text-muted-foreground">
-                <div className="h-4 w-4 border rounded-full"></div>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
                 React-Konva spatial query canvas
               </li>
-              <li className="flex items-center gap-2 text-muted-foreground">
-                <div className="h-4 w-4 border rounded-full"></div>
-                Temporal sequence understanding
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                Text-based image search
               </li>
-              <li className="flex items-center gap-2 text-muted-foreground">
-                <div className="h-4 w-4 border rounded-full"></div>
-                Emergent intelligence through exploration
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                OCR text-in-image detection
               </li>
-              <li className="flex items-center gap-2 text-muted-foreground">
-                <div className="h-4 w-4 border rounded-full"></div>
-                Collaborative discovery features
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                Similarity-based discovery
               </li>
             </ul>
           </div>
@@ -159,8 +160,8 @@ export default function HomePage() {
               <span className="text-sm">Tree Navigation</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="h-3 w-3 bg-yellow-500 rounded-full"></div>
-              <span className="text-sm">Search Platform</span>
+              <div className="h-3 w-3 bg-green-500 rounded-full"></div>
+              <span className="text-sm">Visual Search</span>
             </div>
           </div>
         </div>
@@ -170,12 +171,20 @@ export default function HomePage() {
           <p className="text-muted-foreground mb-4">
             Ready to explore your video collection?
           </p>
-          <Link href="/files">
-            <Button size="lg" variant="outline" className="gap-2">
-              <Database className="h-5 w-5" />
-              Open File Browser
-            </Button>
-          </Link>
+          <div className="flex justify-center gap-4">
+            <Link href="/vbs-search">
+              <Button size="lg" className="gap-2">
+                <Search className="h-5 w-5" />
+                Start Visual Search
+              </Button>
+            </Link>
+            <Link href="/files">
+              <Button size="lg" variant="outline" className="gap-2">
+                <Database className="h-5 w-5" />
+                Browse Files
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     </div>
