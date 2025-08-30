@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 import { useSearchResults } from './hooks/useSearchResults';
 import { SearchResultsProvider } from './SearchResultsContext';
 import { VideoGroup } from './VideoGroup';
+import { ViewModeToggle } from './ViewModeToggle';
+import { UngroupedResults } from './UngroupedResults';
 import { EmptySearchState, ErrorState } from './LoadingStates';
 import type { SearchResultsProps } from './types';
 
@@ -34,23 +36,35 @@ function SearchResultsContent({
   }
 
   return (
-    <div className={cn('space-y-6 p-2 md:p-4 border border-blue-200 rounded-xl', className)}>
-      {validGroups.map((group) => (
-        <VideoGroup
-          key={group.videoId}
-          group={{
-            ...group,
-            // Filter out failed images from each group
-            images: group.images.filter(
-              (img) => !state.failedImageIds.has(img.image_id)
-            ),
-          }}
-          onMoreResults={onMoreResults}
-        />
-      ))}
+    <div className={cn('space-y-4 p-2 md:p-4 border border-blue-200 rounded-xl', className)}>
+      {/* View Mode Toggle */}
+      <ViewModeToggle />
       
-      {/* Results Summary */}
-      {derivedState.hasResults && (
+      {/* Conditional Content Based on View Mode */}
+      {state.viewMode === 'grouped' ? (
+        // Grouped by Video (Current Layout)
+        <div className="space-y-6">
+          {validGroups.map((group) => (
+            <VideoGroup
+              key={group.videoId}
+              group={{
+                ...group,
+                // Filter out failed images from each group
+                images: group.images.filter(
+                  (img) => !state.failedImageIds.has(img.image_id)
+                ),
+              }}
+              onMoreResults={onMoreResults}
+            />
+          ))}
+        </div>
+      ) : (
+        // Ungrouped Grid Layout
+        <UngroupedResults onMoreResults={onMoreResults} />
+      )}
+      
+      {/* Results Summary - Only show in grouped mode to avoid duplication */}
+      {state.viewMode === 'grouped' && derivedState.hasResults && (
         <div className="text-center pt-4 border-t border-gray-200">
           <div className="flex justify-center items-center gap-4 text-sm text-gray-500">
             <span>{derivedState.totalImages} total images</span>

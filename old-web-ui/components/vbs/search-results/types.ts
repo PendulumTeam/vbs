@@ -17,12 +17,15 @@ export interface ImageState {
   googleDriveImageUrl?: string;
 }
 
+export type ViewMode = 'grouped' | 'ungrouped';
+
 export interface SearchResultsState {
   groups: VideoGroup[];
   imageStates: Map<string, ImageState>;
   failedImageIds: Set<string>;
   focusedImageId: string | null;
   focusRefs: Record<string, HTMLDivElement>;
+  viewMode: ViewMode;
 }
 
 export interface SearchResultsActions {
@@ -32,6 +35,7 @@ export interface SearchResultsActions {
   setFocusedImage: (imageId: string | null) => void;
   registerFocusRef: (imageId: string, ref: HTMLDivElement | null) => void;
   copyImageId: (imageId: string) => void;
+  setViewMode: (mode: ViewMode) => void;
 }
 
 export interface SearchResultsContextValue {
@@ -43,6 +47,7 @@ export interface SearchResultsContextValue {
     totalVideos: number;
     loadingImages: number;
     errorImages: number;
+    allImages: SearchResult[];
   };
 }
 

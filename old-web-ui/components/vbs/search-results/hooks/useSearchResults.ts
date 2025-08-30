@@ -7,7 +7,8 @@ import type {
   VideoGroup, 
   ImageState, 
   SearchResultsState, 
-  SearchResultsActions
+  SearchResultsActions,
+  ViewMode
 } from '../types';
 
 export function useSearchResults(results: SearchResult[], focusId: string | null) {
@@ -15,6 +16,15 @@ export function useSearchResults(results: SearchResult[], focusId: string | null
   const [failedImageIds, setFailedImageIds] = useState<Set<string>>(new Set());
   const [focusedImageId, setFocusedImageId] = useState<string | null>(focusId);
   const [focusRefs, setFocusRefs] = useState<Record<string, HTMLDivElement>>({});
+  
+  // View mode state with localStorage persistence
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('vbs-search-view-mode');
+      return (saved as ViewMode) || 'grouped';
+    }
+    return 'grouped';
+  });
 
   // Group results by video
   const groups = useMemo((): VideoGroup[] => {
@@ -160,16 +170,29 @@ export function useSearchResults(results: SearchResult[], focusId: string | null
         description: `Image ID ${imageId} copied to clipboard`,
       });
     },
+
+    setViewMode: (mode: ViewMode) => {
+      setViewModeState(mode);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vbs-search-view-mode', mode);
+      }
+    },
   }), []);
 
   // Derived state
-  const derivedState = useMemo(() => ({
-    hasResults: groups.length > 0,
-    totalImages: results.length,
-    totalVideos: groups.length,
-    loadingImages: Array.from(imageStates.values()).filter(state => state.isLoading).length,
-    errorImages: failedImageIds.size,
-  }), [groups.length, results.length, imageStates, failedImageIds.size]);
+  const derivedState = useMemo(() => {
+    // Flatten all images from groups for ungrouped view
+    const allImages = groups.flatMap(group => group.images);
+    
+    return {
+      hasResults: groups.length > 0,
+      totalImages: results.length,
+      totalVideos: groups.length,
+      loadingImages: Array.from(imageStates.values()).filter(state => state.isLoading).length,
+      errorImages: failedImageIds.size,
+      allImages,
+    };
+  }, [groups, results.length, imageStates, failedImageIds.size]);
 
   const state: SearchResultsState = {
     groups,
@@ -177,6 +200,7 @@ export function useSearchResults(results: SearchResult[], focusId: string | null
     failedImageIds,
     focusedImageId,
     focusRefs,
+    viewMode,
   };
 
   return {
