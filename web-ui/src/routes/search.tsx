@@ -20,11 +20,11 @@ function SearchPage() {
   // Query with URL parameters
   const { data: results, isLoading, error } = useSearchText(q, limit);
 
-  const handleNewSearch = (query: string) => {
-    // Update URL with new search query
+  const handleNewSearch = (query: string, newLimit: number) => {
+    // Update URL with new search query and limit
     navigate({
       to: '/search',
-      search: { q: query, limit, view, sort, sortDir },
+      search: { q: query, limit: newLimit, view, sort, sortDir },
       replace: true,
     });
   };
@@ -61,14 +61,15 @@ function SearchPage() {
       <div className="max-w-2xl mx-auto">
         <SearchBar
           onSearch={handleNewSearch}
+          currentLimit={limit}
           isLoading={isLoading}
-          placeholder="Search for images using text descriptions..."
         />
 
         {/* Current search indicator */}
         <div className="mt-2 text-center">
           <p className="text-sm text-gray-600">
             Searching for: <span className="font-medium">"{q}"</span>
+            <span className="ml-2 text-gray-500">• Limit: {limit}</span>
             {results && (
               <span className="ml-2 text-gray-500">
                 • {results.length} results

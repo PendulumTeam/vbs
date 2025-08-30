@@ -4,11 +4,11 @@ import { SearchBar } from '../components/SearchBar';
 function HomePage() {
   const navigate = useNavigate();
 
-  const handleSearch = (query: string) => {
-    // Navigate to search route with query parameter
+  const handleSearch = (query: string, limit: number) => {
+    // Navigate to search route with query parameter and limit
     navigate({
       to: '/search',
-      search: { q: query, limit: 20 },
+      search: { q: query, limit },
     });
   };
 
@@ -29,7 +29,6 @@ function HomePage() {
       <div className="max-w-2xl mx-auto">
         <SearchBar
           onSearch={handleSearch}
-          placeholder="Search for images using text descriptions..."
         />
       </div>
 
@@ -50,7 +49,7 @@ function HomePage() {
           ].map((example) => (
             <button
               key={example}
-              onClick={() => handleSearch(example)}
+              onClick={() => handleSearch(example, 20)}
               className="p-4 text-left bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all"
             >
               <span className="text-sm text-gray-700">"{example}"</span>
