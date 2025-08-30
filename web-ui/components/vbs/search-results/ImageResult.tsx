@@ -38,13 +38,21 @@ export function ImageResult({ image, onMoreResults, className }: ImageResultProp
     };
   }, [image.image_id, actions]);
 
-  // Convert Google Drive link
+  // Handle image link (CDN URL or Google Drive link)
   useEffect(() => {
     if (image.link) {
-      convertDriveLinkToImageUrl(image.link).then((url) => {
-        setGoogleDriveImageUrl(url);
+      // Check if it's a direct CDN URL or Google Drive link
+      if (image.link.includes('digitaloceanspaces.com') || image.link.startsWith('http')) {
+        // Direct CDN URL - no conversion needed
+        setGoogleDriveImageUrl(image.link);
         actions.setImageLoaded(image.image_id);
-      });
+      } else if (image.link.includes('drive.google.com')) {
+        // Google Drive link - convert it
+        convertDriveLinkToImageUrl(image.link).then((url) => {
+          setGoogleDriveImageUrl(url);
+          actions.setImageLoaded(image.image_id);
+        });
+      }
     }
   }, [image.link, image.image_id, actions]);
 
@@ -79,7 +87,7 @@ export function ImageResult({ image, onMoreResults, className }: ImageResultProp
           <AspectRatio ratio={16 / 9}>
             <Link href={`/image/${image.image_id}`} className="block h-full">
               <Image
-                src={localImageUrl || googleDriveImageUrl || '/placeholder.svg'}
+                src={googleDriveImageUrl || image.link || localImageUrl || '/placeholder.svg'}
                 alt={`Image ${image.image_id}`}
                 fill
                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"

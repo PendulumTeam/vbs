@@ -3,6 +3,33 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 /**
+ * Convert image path back to s3_key for CDN lookup
+ * [L21, L21_V001, 001.jpg] -> L21_V001_001
+ */
+function convertImagePathToS3Key(imagePath: string[]): string | null {
+  try {
+    if (imagePath.length < 3) return null;
+    
+    const collection = imagePath[0]; // L21
+    const video = imagePath[1]; // L21_V001
+    const filename = imagePath[2]; // 001.jpg
+    
+    // Extract frame number from filename
+    const frameNumber = filename.split('.')[0]; // 001
+    
+    // Validate format
+    if (!collection.startsWith('L') || !video.includes('_V')) {
+      return null;
+    }
+    
+    return `${video}_${frameNumber}`; // L21_V001_001
+  } catch (error) {
+    console.warn(`Failed to convert image path to s3_key:`, imagePath, error);
+    return null;
+  }
+}
+
+/**
  * GET handler for serving VBS images
  * Route: /api/images/[...path]
  * Example: /api/images/L11/L11_V017/frame_24726.jpg
@@ -38,7 +65,7 @@ export async function GET(
     }
 
     try {
-      // Try to read the file
+      // Try to read the file locally first
       const fileBuffer = await fs.readFile(resolvedPath);
       
       // Determine content type based on file extension
@@ -64,7 +91,7 @@ export async function GET(
           break;
       }
 
-      // Return the image with appropriate headers
+      // Return the local image with appropriate headers
       return new NextResponse(new Uint8Array(fileBuffer), {
         status: 200,
         headers: {
@@ -74,8 +101,37 @@ export async function GET(
       });
       
     } catch (fileError) {
-      // If file doesn't exist, return a placeholder
-      console.log(`Image not found: ${resolvedPath}, serving placeholder`);
+      // If local file doesn't exist, try to proxy from CDN
+      console.log(`Local image not found: ${resolvedPath}, trying CDN proxy`);
+      
+      try {
+        // Convert path to s3_key format for CDN lookup
+        // /api/images/L21/L21_V001/001.jpg -> L21_V001_001
+        const s3_key = convertImagePathToS3Key(imagePath);
+        
+        if (s3_key) {
+          // Try to fetch from CDN
+          const cdnUrl = `https://vbs.sgp1.digitaloceanspaces.com/${s3_key}`;
+          const cdnResponse = await fetch(cdnUrl);
+          
+          if (cdnResponse.ok) {
+            const imageBuffer = await cdnResponse.arrayBuffer();
+            
+            return new NextResponse(new Uint8Array(imageBuffer), {
+              status: 200,
+              headers: {
+                'Content-Type': cdnResponse.headers.get('content-type') || 'image/jpeg',
+                'Cache-Control': 'public, max-age=31536000, immutable',
+              },
+            });
+          }
+        }
+      } catch (cdnError) {
+        console.log(`CDN proxy failed for ${imagePath.join('/')}: ${cdnError}`);
+      }
+      
+      // If both local and CDN fail, return a placeholder
+      console.log(`All image sources failed for ${imagePath.join('/')}, serving placeholder`);
       
       // Return a simple SVG placeholder
       const placeholderSvg = `

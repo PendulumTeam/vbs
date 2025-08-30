@@ -17,47 +17,57 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Forward the request to the actual VBS backend
-    const backendUrl = process.env.VBS_BACKEND_URL || 'http://localhost:3000';
-    
-    const response = await fetch(`${backendUrl}/neighbor`, {
+    // Forward the request to the new VBS backend
+    const backendUrl = process.env.VBS_BACKEND_URL || 'http://localhost:8000';
+
+    const response = await fetch(`${backendUrl}/neighbors`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ id, limit }),
+      body: JSON.stringify({ s3_key: id, limit }), // Use s3_key parameter for new backend
     });
 
     if (!response.ok) {
       throw new Error(`Backend neighbor search failed with status: ${response.status}`);
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
-    
+    const backendData = await response.json();
+
+    // Transform backend response to match frontend expectations
+    const transformedResponse = {
+      frames: backendData.frames.map((frame: any) => {
+        try {
+          const parts = frame.s3_key.split('_');
+          const frameNumber = parseInt(parts[2]);
+          const videoId = `${parts[0]}_${parts[1]}`;
+
+          return {
+            image_id: frame.s3_key,
+            link: frame.public_url, // Direct CDN URL - much simpler!
+            score: 1.0, // No score for neighbor search
+            frame_stamp: frameNumber,
+            watch_url: `https://youtube.com/watch?v=${videoId}` // Placeholder
+          };
+        } catch (error) {
+          console.warn(`Failed to transform neighbor frame: ${frame.s3_key}`, error);
+          return {
+            image_id: frame.s3_key,
+            link: frame.public_url,
+            score: 1.0,
+            frame_stamp: 0,
+            watch_url: ''
+          };
+        }
+      })
+    };
+
+    return NextResponse.json(transformedResponse);
+
   } catch (error) {
     console.error('Neighbor search API error:', error);
-    
-    // Return mock data for development/testing
-    const mockData = {
-      frames: [
-        {
-          frame_stamp: 985.32,
-          image_id: "L15_V013_24785",
-          link: "https://drive.google.com/file/d/3Ot-Dyt-oIV_SmmW1GTcZ6YXGO5upil9z/view?usp=drivesdk",
-          score: 0.8234567890123456,
-          watch_url: "https://youtube.com/watch?v=bxoil0PDw2Q"
-        },
-        {
-          frame_stamp: 1001.78,
-          image_id: "L15_V013_24801",
-          link: "https://drive.google.com/file/d/4Pt-Eyt-pJW_TnnX2HUdA7ZXHP6vqjm0z/view?usp=drivesdk",
-          score: 0.7654321098765432,
-          watch_url: "https://youtube.com/watch?v=bxoil0PDw2Q"
-        }
-      ]
-    };
-    
-    return NextResponse.json(mockData);
+
+
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

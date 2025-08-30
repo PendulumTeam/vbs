@@ -43,14 +43,18 @@ export default function ImageDetailPage() {
     }
   }, [imageId]);
 
-  // Set image URL
+  // Set image URL - prioritize direct link from API
   useEffect(() => {
-    const localImageUrl = getLocalImageUrl(imageId);
-    setImageUrl(localImageUrl);
-    
-    // Also try to get Google Drive URL if available
     if (image?.link) {
-      convertDriveLinkToImageUrl(image.link).then(setImageUrl);
+      // Check if it's a direct CDN URL (new backend) or Google Drive link (old backend)
+      if (image.link.includes('digitaloceanspaces.com') || image.link.startsWith('http')) {
+        // Direct CDN URL - use as-is
+        setImageUrl(image.link);
+      }
+    } else {
+      // Fallback to local image URL construction
+      const localImageUrl = getLocalImageUrl(imageId);
+      setImageUrl(localImageUrl);
     }
   }, [imageId, image?.link]);
 
@@ -97,7 +101,7 @@ export default function ImageDetailPage() {
             Back
           </Button>
         </div>
-        
+
         <Card className="shadow-lg">
           <CardContent className="p-8">
             <div className="space-y-4">
@@ -124,7 +128,7 @@ export default function ImageDetailPage() {
             Back
           </Button>
         </div>
-        
+
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -184,13 +188,13 @@ export default function ImageDetailPage() {
                 Video frame from {image.image_id.split('_').slice(0, 2).join('_')}
               </p>
             </div>
-            
+
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleCopyId}>
                 <Copy className="h-4 w-4 mr-2" />
                 Copy ID
               </Button>
-              
+
               <Button onClick={handleOpenVideo}>
                 <ExternalLink className="h-4 w-4 mr-2" />
                 Open Video
@@ -215,12 +219,12 @@ export default function ImageDetailPage() {
                   <Label className="text-xs text-gray-500 uppercase tracking-wider">Video ID</Label>
                   <p className="font-medium">{image.image_id.split('_').slice(0, 2).join('_')}</p>
                 </div>
-                
+
                 <div>
                   <Label className="text-xs text-gray-500 uppercase tracking-wider">Timestamp</Label>
                   <p className="font-medium">{image.frame_stamp.toFixed(2)}s</p>
                 </div>
-                
+
                 <div>
                   <Label className="text-xs text-gray-500 uppercase tracking-wider">Formatted Time</Label>
                   <p className="text-sm text-gray-600">
@@ -244,7 +248,7 @@ export default function ImageDetailPage() {
                     </Badge>
                   </div>
                 </div>
-                
+
                 {image.ocr_text && (
                   <div>
                     <Label className="text-xs text-gray-500 uppercase tracking-wider">OCR Text</Label>
@@ -253,7 +257,7 @@ export default function ImageDetailPage() {
                     </p>
                   </div>
                 )}
-                
+
                 <div>
                   <Label className="text-xs text-gray-500 uppercase tracking-wider">Actions</Label>
                   <div className="flex gap-2 mt-1">

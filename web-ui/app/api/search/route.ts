@@ -8,7 +8,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, model = 'blip2_feature_extractor', limit = 20 } = body;
+    const { query, model = 'beit3', limit = 20 } = body;
 
     if (!query) {
       return NextResponse.json(
@@ -17,47 +17,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Forward the request to the actual VBS backend
-    const backendUrl = process.env.VBS_BACKEND_URL || 'http://localhost:3000';
-    
+    // Forward the request to the new VBS backend
+    const backendUrl = process.env.VBS_BACKEND_URL || 'http://localhost:8000';
+
     const response = await fetch(`${backendUrl}/search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query, limit, model }),
+      body: JSON.stringify({ query, limit }), // Remove model parameter for new backend
     });
 
     if (!response.ok) {
       throw new Error(`Backend search failed with status: ${response.status}`);
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
-    
+    const backendData = await response.json();
+
+    // Transform backend response to match frontend expectations
+    const transformedResponse = {
+      frames: backendData.frames.map((frame: any) => {
+        try {
+          const parts = frame.s3_key.split('_');
+          const frameNumber = parseInt(parts[2]);
+          const videoId = `${parts[0]}_${parts[1]}`;
+
+          return {
+            image_id: frame.s3_key,
+            link: frame.public_url, // Direct CDN URL - much simpler!
+            score: frame.score || 1.0,
+            frame_stamp: frameNumber,
+            watch_url: `https://youtube.com/watch?v=${videoId}` // Placeholder
+          };
+        } catch (error) {
+          console.warn(`Failed to transform frame: ${frame.s3_key}`, error);
+          return {
+            image_id: frame.s3_key,
+            link: frame.public_url,
+            score: 1.0,
+            frame_stamp: 0,
+            watch_url: ''
+          };
+        }
+      })
+    };
+
+    return NextResponse.json(transformedResponse);
+
   } catch (error) {
     console.error('Search API error:', error);
-    
-    // Return mock data for development/testing
-    const mockData = {
-      frames: [
-        {
-          frame_stamp: 991.64,
-          image_id: "L15_V013_24791",
-          link: "https://drive.google.com/file/d/1Nt-Byt-mGT_QkkU9ESaX4YWEM3snghjz/view?usp=drivesdk",
-          score: 0.5527825355529785,
-          watch_url: "https://youtube.com/watch?v=bxoil0PDw2Q"
-        },
-        {
-          frame_stamp: 1123.45,
-          image_id: "L15_V014_25123",
-          link: "https://drive.google.com/file/d/2Mt-Cyt-nHU_RllV0FSbY5ZXFN4tohk8z/view?usp=drivesdk",
-          score: 0.4823764329185672,
-          watch_url: "https://youtube.com/watch?v=bxoil0PDw2Q"
-        }
-      ]
-    };
-    
-    return NextResponse.json(mockData);
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
