@@ -1,0 +1,411 @@
+Metadata-Version: 2.4
+Name: vbs-server
+Version: 2.0.0
+Summary: VBS Video Search Assistant - AI-powered video frame search and retrieval system
+Author-email: VBS Team <team@vbs.ai>
+License: MIT
+Project-URL: Homepage, https://github.com/vbs-team/vbs-server
+Project-URL: Documentation, https://docs.vbs.ai
+Project-URL: Repository, https://github.com/vbs-team/vbs-server.git
+Project-URL: Issues, https://github.com/vbs-team/vbs-server/issues
+Keywords: video,search,ai,ml,computer-vision,faiss,mongodb
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Framework :: FastAPI
+Classifier: Topic :: Internet :: WWW/HTTP :: HTTP Servers
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Multimedia :: Video
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.104.0
+Requires-Dist: uvicorn[standard]>=0.24.0
+Requires-Dist: pydantic>=2.5.0
+Requires-Dist: pydantic-settings>=2.1.0
+Requires-Dist: motor>=3.3.0
+Requires-Dist: redis[hiredis]>=5.0.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: transformers>=4.35.0
+Requires-Dist: faiss-cpu>=1.7.4
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: dependency-injector>=4.41.0
+Requires-Dist: python-multipart>=0.0.6
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: structlog>=23.2.0
+Requires-Dist: python-json-logger>=2.0.7
+Requires-Dist: python-dotenv>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.1.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.12.0; extra == "dev"
+Requires-Dist: httpx>=0.25.0; extra == "dev"
+Requires-Dist: black>=23.9.0; extra == "dev"
+Requires-Dist: isort>=5.12.0; extra == "dev"
+Requires-Dist: flake8>=6.1.0; extra == "dev"
+Requires-Dist: mypy>=1.6.0; extra == "dev"
+Requires-Dist: pre-commit>=3.5.0; extra == "dev"
+Requires-Dist: mkdocs>=1.5.0; extra == "dev"
+Requires-Dist: mkdocs-material>=9.4.0; extra == "dev"
+Provides-Extra: production
+Requires-Dist: gunicorn>=21.2.0; extra == "production"
+Requires-Dist: prometheus-client>=0.19.0; extra == "production"
+Provides-Extra: gpu
+Requires-Dist: faiss-gpu>=1.7.4; extra == "gpu"
+
+# VBS Server 2.0
+
+> Modern Python backend for AI-powered video frame search and retrieval system
+
+## 🚀 Features
+
+- **Semantic Text Search**: Natural language queries using BEiT3 embeddings and FAISS vector search
+- **Object Detection Search**: Spatial object queries with IoU scoring and logical operators
+- **OCR Text Search**: Find frames containing specific text with fuzzy matching
+- **Neighbor Search**: Explore temporally related frames within video sequences
+- **Modern Architecture**: Clean architecture with dependency injection, async operations, and comprehensive error handling
+- **Production Ready**: Docker containerization, structured logging, health checks, and monitoring
+
+## 🏗️ Architecture
+
+### Clean Architecture Layers
+
+```
+┌─────────────────────────────────────────┐
+│           API Layer (FastAPI)         │
+├─────────────────────────────────────────┤
+│         Core Business Logic           │
+├─────────────────────────────────────────┤
+│       Infrastructure Layer            │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐    │
+│  │ MongoDB │ │  Redis │ │  BEiT3  │   │
+│  └─────────┘ └─────────┘ └─────────┘    │
+└─────────────────────────────────────────┘
+```
+
+### Key Components
+
+- **FastAPI**: Modern async web framework with automatic API documentation
+- **MongoDB**: Document database for frame metadata and search indices
+- **Redis**: High-performance caching for search results
+- **BEiT3**: Multimodal model for text-to-image embedding generation
+- **FAISS**: Efficient vector similarity search
+- **Pydantic**: Type-safe configuration and request/response validation
+- **Dependency Injector**: Clean dependency management and testability
+- **Structlog**: Structured logging for production observability
+
+## 🛠️ Setup
+
+### Prerequisites
+
+- Python 3.11+
+- MongoDB 7.0+
+- Redis 7.0+
+- CUDA (optional, for GPU acceleration)
+
+### Installation
+
+1. **Clone and setup the project**:
+```bash
+cd vbs-server
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -e .
+```
+
+2. **Install dependencies**:
+```bash
+# For development
+pip install -r requirements/development.txt
+
+# For production
+pip install -r requirements/production.txt
+
+# For GPU support
+pip install -r requirements/gpu.txt
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+
+3. **Setup environment variables**:
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+4. **Setup model files**:
+```bash
+mkdir -p models
+# Place your model files:
+# - models/beit3.spm (tokenizer)
+# - models/beit3_base_patch16_384_f30k_retrieval.pth (model weights)
+# - models/qualifying_round_frame_embeddings_beit3.bin (FAISS index)
+# - models/qualifying_round_frame_ids.json (frame ID mapping)
+```
+
+### Configuration
+
+The application uses Pydantic Settings for type-safe configuration management. Configure via environment variables or `.env` file:
+
+```env
+# Database
+DATABASE__MONGODB_URI=mongodb://localhost:27017
+DATABASE__DATABASE_NAME=vbs_db
+DATABASE__COLLECTION_NAME=frames
+
+# Cache
+REDIS__REDIS_HOST=localhost
+REDIS__REDIS_PORT=6379
+
+# Machine Learning
+ML__MODEL_PATH=./models/beit3.spm
+ML__FAISS_INDEX_PATH=./models/qualifying_round_frame_embeddings_beit3.bin
+ML__DEVICE=auto  # auto, cpu, or cuda
+
+# API
+API__HOST=0.0.0.0
+API__PORT=8000
+API__DEBUG=false
+
+# Logging
+LOGGING__LEVEL=INFO
+LOGGING__FORMAT=json
+```
+
+## 🚀 Running the Application
+
+### Development
+
+```bash
+# Activate virtual environment and start with auto-reload
+source venv/bin/activate
+cd src
+python -m main
+
+# Or with uvicorn directly
+source venv/bin/activate
+cd src
+uvicorn main:create_app --factory --reload --host 0.0.0.0 --port 8000
+```
+
+### Production
+
+```bash
+# Using Gunicorn with multiple workers
+source venv/bin/activate
+cd src
+gunicorn main:create_app --factory --bind 0.0.0.0:8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker
+
+# Or using the production configuration
+source venv/bin/activate
+cd src
+python -m main
+```
+
+### Docker
+
+```bash
+# Build the image
+docker build -f docker/Dockerfile.api -t vbs-server:latest .
+
+# Run with Docker Compose
+docker-compose up -d
+```
+
+## 📚 API Documentation
+
+Once running, visit:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+### API Endpoints
+
+#### Text Search
+```bash
+curl -X POST "http://localhost:8000/api/v1/search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "person riding bicycle",
+    "limit": 10
+  }'
+```
+
+#### Object Detection Search
+```bash
+curl -X POST "http://localhost:8000/api/v1/search-detections" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "object_list": [
+      {
+        "class_name": "person",
+        "bbox": [100, 100, 200, 200]
+      }
+    ],
+    "limit": 10,
+    "logic": "AND"
+  }'
+```
+
+#### OCR Text Search
+```bash
+curl -X POST "http://localhost:8000/api/v1/search-ocr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "STOP",
+    "limit": 10
+  }'
+```
+
+#### Neighbor Search
+```bash
+curl -X POST "http://localhost:8000/api/v1/neighbor" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "L15_V013_24791",
+    "limit": 10
+  }'
+```
+
+#### Health Check
+```bash
+curl "http://localhost:8000/api/v1/health"
+```
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src/vbs --cov-report=html
+
+# Run specific test categories
+pytest tests/unit/
+pytest tests/integration/
+pytest tests/e2e/
+```
+
+## 📊 Monitoring and Observability
+
+### Logging
+
+The application uses structured logging (JSON format in production):
+
+```python
+import structlog
+logger = structlog.get_logger(__name__)
+
+logger.info("Search completed",
+           query="cat on table",
+           results_count=15,
+           duration_ms=234)
+```
+
+### Health Checks
+
+- **Application**: `GET /api/v1/health`
+- **Individual Services**: Repository, Cache, ML Model status included
+
+### Metrics
+
+Production deployments can integrate with Prometheus for metrics collection.
+
+## 🐳 Docker Deployment
+
+### Development
+
+```bash
+docker-compose -f docker-compose.dev.yml up -d
+```
+
+### Production
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Environment Variables
+
+Key environment variables for Docker deployment:
+
+```yaml
+environment:
+  - DATABASE__MONGODB_URI=mongodb://mongodb:27017
+  - REDIS__REDIS_HOST=redis
+  - API__DEBUG=false
+  - LOGGING__LEVEL=INFO
+  - LOGGING__FORMAT=json
+```
+
+## 🔧 Development
+
+### Code Quality
+
+```bash
+# Format code
+black src/ tests/
+
+# Sort imports
+isort src/ tests/
+
+# Lint
+flake8 src/ tests/
+
+# Type checking
+mypy src/
+
+# Pre-commit hooks
+pre-commit install
+pre-commit run --all-files
+```
+
+### Project Structure
+
+```
+vbs-server/
+├── src/vbs/                    # Source code
+│   ├── api/                   # API layer (FastAPI routes)
+│   ├── core/                  # Business logic
+│   ├── infrastructure/        # External service integrations
+│   └── common/               # Shared utilities
+├── tests/                     # Test suite
+├── requirements/              # Dependencies by environment
+├── docker/                   # Docker configurations
+└── docs/                     # Additional documentation
+```
+
+### Migration from Legacy
+
+This version maintains API compatibility with the original Flask implementation while providing:
+
+- ✅ **Modern Architecture**: Clean architecture with proper separation of concerns
+- ✅ **Type Safety**: Full Pydantic validation and MyPy type checking
+- ✅ **Async Operations**: Better performance and scalability
+- ✅ **Error Handling**: Comprehensive exception hierarchy
+- ✅ **Testing**: Full test coverage with proper mocking
+- ✅ **Documentation**: Auto-generated API docs and comprehensive README
+- ✅ **Production Ready**: Docker, logging, monitoring, health checks
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes following the code style guidelines
+4. Add tests for your changes
+5. Commit your changes: `git commit -m 'feat: add amazing feature'`
+6. Push to the branch: `git push origin feature/amazing-feature`
+7. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- **BEiT3**: Multimodal transformer for vision and language understanding
+- **FAISS**: Efficient similarity search and clustering of dense vectors
+- **FastAPI**: Modern, fast web framework for building APIs with Python 3.7+
+- **MongoDB**: Document database for modern applications

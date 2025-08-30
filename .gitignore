@@ -99,3 +99,5 @@ pgdata/
 test-results/
 htmlcov/
 .benchmarks/
+
+vbs-server/models/*.bin
