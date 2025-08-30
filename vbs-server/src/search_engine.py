@@ -183,18 +183,17 @@ def vector_search(query_embedding: np.ndarray, limit: int = 20) -> Tuple[List[st
 
     # Perform FAISS search
     distances, indices = faiss_index.search(query_vector, limit)
-
+    
     # Map indices to frame IDs with scores
-    result_frame_ids = []
-    result_scores = []
 
-    for i in range(limit):
-        idx = indices[0][i]
-        if 0 <= idx < len(frame_ids):
-            result_frame_ids.append(frame_ids[idx])
-            result_scores.append(float(distances[0][i]))
-
-    return result_frame_ids, result_scores
+    results_frame = []
+    results_scores = []
+    
+    for i, (score, idx) in enumerate(zip(distances[0], indices[0])):
+        if idx < len(frame_ids):
+            results_frame.append(frame_ids[idx])
+            results_scores.append(float(score))
+    return results_frame, results_scores
 
 
 def search_text(query: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -227,6 +226,6 @@ def search_text(query: str, limit: int = 20) -> List[Dict[str, Any]]:
         })
 
     # Sort by score (lower distance = higher similarity)
-    results.sort(key=lambda x: x['score'])
+    results.sort(key=lambda x: x['score'], reverse=True)
 
     return results
