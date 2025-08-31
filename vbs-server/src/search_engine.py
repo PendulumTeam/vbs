@@ -193,6 +193,8 @@ def vector_search(query_embedding: np.ndarray, limit: int = 20) -> Tuple[List[st
         if idx < len(frame_ids):
             results_frame.append(frame_ids[idx])
             results_scores.append(float(score))
+    print("FAISS search results (frames):", results_frame)
+    print("FAISS search results (scores):", results_scores)
     return results_frame, results_scores
 
 
@@ -224,7 +226,9 @@ def search_text(query: str, limit: int = 20) -> List[Dict[str, Any]]:
             "score": score,
             "s3_key": frame_id  # Assuming frame_id maps to s3_key
         })
-
+    with open("./image_ids.csv","w") as f:
+        for result in results:
+            f.write(f"{result['image_id']}\n")
     # Sort by score (lower distance = higher similarity)
     results.sort(key=lambda x: x['score'], reverse=True)
 
