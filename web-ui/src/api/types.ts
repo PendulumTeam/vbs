@@ -19,6 +19,17 @@ export interface BackendFrame {
   region: string;
   upload_date: string;
   score?: number;
+  // New fields from updated server response
+  image_id?: string; // Contains frame_n value (e.g., "L23_V001_250")
+  frame_n?: string; // Frame identifier (e.g., "L23_V001_250")
+  fps?: number; // Frame rate
+  frame_idx?: number; // Frame index
+  pts_time?: number; // Presentation timestamp
+  video_id?: string; // Video identifier (e.g., "L23_V001")
+  source_file?: string; // Source CSV file
+  metadata_hash?: string; // Metadata hash
+  ocr_text?: string; // OCR extracted text from frame
+  watch_url?: string; // Timestamped YouTube URL from backend
 }
 
 export interface BackendResponse {
@@ -32,7 +43,7 @@ export interface SearchParams {
 }
 
 export interface NeighborParams {
-  s3_key: string;
+  frame_id: string;
   limit?: number;
 }
 

@@ -1,42 +1,51 @@
 // TanStack Query hooks for VBS API
 
 import { useQuery } from '@tanstack/react-query';
-import { 
-  searchText, 
-  searchNeighbors, 
-  getFramesByIds, 
-  getVideoFrames, 
+import {
+  searchText,
+  searchNeighbors,
+  getFramesByIds,
+  getVideoFrames,
   getVideoList,
-  checkHealth 
-} from './client';
-import type { SearchResult } from './types';
+  checkHealth,
+} from "./client";
+import type { SearchResult, BackendFrame } from "./types";
+
 
 /**
  * Transform backend frame to frontend SearchResult format
  */
-function transformBackendFrame(frame: any): SearchResult {
+function transformBackendFrame(frame: BackendFrame): SearchResult {
   try {
-    const parts = frame.s3_key.split('_');
-    const frameNumber = parseInt(parts[2]);
-    const videoId = `${parts[0]}_${parts[1]}`;
-    
+    // Use the backend's image_id field (contains frame_n), with fallbacks
+    const imageId = frame.image_id || frame.frame_n || frame.s3_key;
+
+    // Extract frame number - try from frame_idx first, then parse from s3_key
+    let frameNumber = 0;
+    if (frame.frame_idx !== undefined) {
+      frameNumber = frame.frame_idx;
+    } else {
+      const parts = frame.s3_key.split("_");
+      frameNumber = parseInt(parts[2]) || 0;
+    }
+
     return {
-      image_id: frame.s3_key,
+      image_id: imageId,
       link: frame.public_url, // Direct CDN URL
       score: frame.score || 1.0,
       frame_stamp: frameNumber,
-      watch_url: `https://youtube.com/watch?v=${videoId}`,
-      ocr_text: frame.ocr_text
+      watch_url: frame.watch_url || "", // Use backend-provided timestamped YouTube URL
+      ocr_text: frame.ocr_text,
     };
   } catch (error) {
     console.warn(`Failed to transform frame: ${frame.s3_key}`, error);
     return {
-      image_id: frame.s3_key,
+      image_id: frame.image_id || frame.frame_n || frame.s3_key,
       link: frame.public_url,
       score: 1.0,
       frame_stamp: 0,
-      watch_url: '',
-      ocr_text: undefined
+      watch_url: "",
+      ocr_text: undefined,
     };
   }
 }
@@ -55,21 +64,22 @@ export function useSearchText(query: string, limit: number = 20) {
   });
 }
 
-export function useNeighborSearch(s3_key: string, limit: number = 20) {
+export function useNeighborSearch(frameId: string, limit: number = 20) {
   return useQuery({
-    queryKey: ['neighbors', s3_key, limit],
+    queryKey: ["neighbors", frameId, limit],
     queryFn: async () => {
-      const response = await searchNeighbors({ s3_key, limit });
+      // Convert frame_n format to s3_key format for API compatibility
+      const response = await searchNeighbors({ frame_id: frameId, limit });
       return response.frames.map(transformBackendFrame);
     },
-    enabled: !!s3_key,
+    enabled: !!frameId,
     staleTime: 10 * 60 * 1000, // 10 minutes (neighbors don't change often)
   });
 }
 
 export function useFramesByIds(frame_ids: string[]) {
   return useQuery({
-    queryKey: ['frames-by-ids', frame_ids],
+    queryKey: ["frames-by-ids", frame_ids],
     queryFn: async () => {
       const response = await getFramesByIds(frame_ids);
       return response.frames.map(transformBackendFrame);
@@ -81,7 +91,7 @@ export function useFramesByIds(frame_ids: string[]) {
 
 export function useVideoFrames(l: string, v: string, limit: number = 100) {
   return useQuery({
-    queryKey: ['video-frames', l, v, limit],
+    queryKey: ["video-frames", l, v, limit],
     queryFn: async () => {
       const response = await getVideoFrames({ l, v, limit });
       return response.frames.map(transformBackendFrame);
@@ -93,7 +103,7 @@ export function useVideoFrames(l: string, v: string, limit: number = 100) {
 
 export function useVideoList() {
   return useQuery({
-    queryKey: ['video-list'],
+    queryKey: ["video-list"],
     queryFn: getVideoList,
     staleTime: 30 * 60 * 1000, // 30 minutes (video list changes rarely)
   });
@@ -101,7 +111,7 @@ export function useVideoList() {
 
 export function useHealthCheck() {
   return useQuery({
-    queryKey: ['health'],
+    queryKey: ["health"],
     queryFn: checkHealth,
     refetchInterval: 30 * 1000, // Check every 30 seconds
     retry: false, // Don't retry health checks

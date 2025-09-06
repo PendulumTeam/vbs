@@ -222,9 +222,8 @@ def search_text(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     results = []
     for frame_id, score in zip(frame_ids_found, scores):
         results.append({
-            "image_id": frame_id,
             "score": score,
-            "s3_key": frame_id  # Assuming frame_id maps to s3_key
+            "s3_key": frame_id  # frame_id from FAISS maps to s3_key for database lookup
         })
     with open("./image_ids.csv","w") as f:
         for result in results:

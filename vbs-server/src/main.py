@@ -28,7 +28,7 @@ class FrameRequest(BaseModel):
     frame_ids: List[str]
 
 class NeighborRequest(BaseModel):
-    s3_key: str
+    frame_id: str  # Accepts frame_n format (e.g., "L21_V001_250")
     limit: int = 20
 
 class VideoRequest(BaseModel):
@@ -85,7 +85,15 @@ async def get_frames_by_ids(request: FrameRequest):
     """Get frames by their IDs or S3 keys."""
     try:
         docs = await database.get_frames_by_s3_keys(request.frame_ids)
-        return FrameResponse(frames=docs, count=len(docs))
+        # Enrich frames with YouTube watch URLs
+        docs = await database.enrich_frames_with_watch_urls(docs)
+        # Add image_id field to each document
+        frames_with_image_id = []
+        for doc in docs:
+            frame_doc = doc.copy()
+            frame_doc["image_id"] = frame_doc.get("frame_n", frame_doc.get("s3_key"))
+            frames_with_image_id.append(frame_doc)
+        return FrameResponse(frames=frames_with_image_id, count=len(frames_with_image_id))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
@@ -103,6 +111,9 @@ async def search_text(request: SearchRequest):
         s3_keys = [result["s3_key"] for result in search_results]
         frame_docs = await database.get_frames_by_s3_keys(s3_keys)
         
+        # Enrich frames with YouTube watch URLs
+        frame_docs = await database.enrich_frames_with_watch_urls(frame_docs)
+        
         # Combine search scores with frame metadata
         frames_with_scores = []
         frame_lookup = {doc["s3_key"]: doc for doc in frame_docs}
@@ -110,8 +121,9 @@ async def search_text(request: SearchRequest):
         for result in search_results:
             s3_key = result["s3_key"]
             if s3_key in frame_lookup:
-                frame_doc = frame_lookup[s3_key]
+                frame_doc = frame_lookup[s3_key].copy()  # Create copy to avoid modifying original
                 frame_doc["score"] = result["score"]
+                frame_doc["image_id"] = frame_doc.get("frame_n", s3_key)  # Use frame_n as image_id, fallback to s3_key
                 frames_with_scores.append(frame_doc)
         
         return FrameResponse(frames=frames_with_scores, count=len(frames_with_scores))
@@ -121,10 +133,18 @@ async def search_text(request: SearchRequest):
 
 @app.post("/neighbors", response_model=FrameResponse)
 async def get_neighbor_frames(request: NeighborRequest):
-    """Get neighboring frames for a given frame."""
+    """Get neighboring frames for a given frame using frame_n identifier."""
     try:
-        docs = await database.find_neighbors(request.s3_key, request.limit)
-        return FrameResponse(frames=docs, count=len(docs))
+        docs = await database.find_neighbors(request.frame_id, request.limit)
+        # Enrich frames with YouTube watch URLs
+        docs = await database.enrich_frames_with_watch_urls(docs)
+        # Add image_id field to each document
+        frames_with_image_id = []
+        for doc in docs:
+            frame_doc = doc.copy()
+            frame_doc["image_id"] = frame_doc.get("frame_n", frame_doc.get("s3_key"))
+            frames_with_image_id.append(frame_doc)
+        return FrameResponse(frames=frames_with_image_id, count=len(frames_with_image_id))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
@@ -133,7 +153,15 @@ async def get_video_frames(request: VideoRequest):
     """Get all frames from a specific video."""
     try:
         docs = await database.find_video_frames(request.l, request.v, request.limit)
-        return FrameResponse(frames=docs, count=len(docs))
+        # Enrich frames with YouTube watch URLs
+        docs = await database.enrich_frames_with_watch_urls(docs)
+        # Add image_id field to each document
+        frames_with_image_id = []
+        for doc in docs:
+            frame_doc = doc.copy()
+            frame_doc["image_id"] = frame_doc.get("frame_n", frame_doc.get("s3_key"))
+            frames_with_image_id.append(frame_doc)
+        return FrameResponse(frames=frames_with_image_id, count=len(frames_with_image_id))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
@@ -166,7 +194,7 @@ async def neighbor_legacy(data: Dict[str, Any]):
     if not frame_id:
         raise HTTPException(status_code=400, detail="Missing 'id' field")
     
-    neighbors = await get_neighbor_frames(NeighborRequest(s3_key=frame_id, limit=limit))
+    neighbors = await get_neighbor_frames(NeighborRequest(frame_id=frame_id, limit=limit))
     return {"item_count": neighbors.count, "frames": neighbors.frames}
 
 # Main execution
