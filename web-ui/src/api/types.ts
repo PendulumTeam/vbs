@@ -7,6 +7,7 @@ export interface SearchResult {
   frame_stamp: number;
   watch_url: string;
   ocr_text?: string;
+  video_fps?: number;
 }
 
 export interface BackendFrame {
@@ -30,6 +31,7 @@ export interface BackendFrame {
   metadata_hash?: string; // Metadata hash
   ocr_text?: string; // OCR extracted text from frame
   watch_url?: string; // Timestamped YouTube URL from backend
+  video_fps?: number; // Video frames per second
 }
 
 export interface BackendResponse {

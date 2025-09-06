@@ -195,6 +195,7 @@ function ImageCard({
             </p>
             <p className="text-xs text-gray-500">
               Frame {image.frame_stamp}
+              {image.video_fps && <span className="ml-1">@ {image.video_fps}fps</span>}
               {isCenterFrame && (
                 <span className="ml-2 text-purple-600 font-medium">• Target frame</span>
               )}

@@ -321,13 +321,13 @@ def generate_watch_url(video_metadata: Dict[str, Any], pts_time: Optional[float]
 
 async def enrich_frames_with_watch_urls(frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Add timestamped YouTube watch URLs to frame documents.
+    Add timestamped YouTube watch URLs and video FPS to frame documents.
 
     Args:
         frames: List of frame documents from file_metadata collection
 
     Returns:
-        List of enriched frame documents with watch_url field
+        List of enriched frame documents with watch_url and video_fps fields
     """
     start_time = time.time()
     frame_count = len(frames)
@@ -385,16 +385,18 @@ async def enrich_frames_with_watch_urls(frames: List[Dict[str, Any]]) -> List[Di
         if video_id and video_id in video_metadata_cache:
             watch_url = generate_watch_url(video_metadata_cache[video_id], pts_time)
             frame_copy["watch_url"] = watch_url
+            frame_copy["video_fps"] = frame.get("fps")  # Add FPS from frame data
             frames_enriched += 1
-            logger.debug(f"Frame {i+1}: Generated watch URL for {video_id} at {pts_time}s")
+            logger.debug(f"Frame {i+1}: Generated watch URL for {video_id} at {pts_time}s, FPS={frame.get('fps')}")
         else:
             # Fallback: empty watch_url if video metadata not found
             frame_copy["watch_url"] = ""
+            frame_copy["video_fps"] = frame.get("fps")  # Include FPS even without watch_url
             frames_skipped += 1
             if not video_id:
-                logger.debug(f"Frame {i+1}: Skipped - no video_id")
+                logger.debug(f"Frame {i+1}: Skipped - no video_id, FPS={frame.get('fps')}")
             else:
-                logger.debug(f"Frame {i+1}: Skipped - no metadata for {video_id}")
+                logger.debug(f"Frame {i+1}: Skipped - no metadata for {video_id}, FPS={frame.get('fps')}")
 
         enriched_frames.append(frame_copy)
 

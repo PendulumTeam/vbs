@@ -141,6 +141,12 @@ export function ImageModal({
                     <span className="text-gray-500">Video ID:</span>
                     <span className="font-medium">{videoInfo.video}</span>
                   </div>
+                  {image.video_fps && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Video FPS:</span>
+                      <span className="font-medium">{image.video_fps} fps</span>
+                    </div>
+                  )}
                   {image.score && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Relevance Score:</span>

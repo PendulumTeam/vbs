@@ -36,6 +36,7 @@ function transformBackendFrame(frame: BackendFrame): SearchResult {
       frame_stamp: frameNumber,
       watch_url: frame.watch_url || "", // Use backend-provided timestamped YouTube URL
       ocr_text: frame.ocr_text,
+      video_fps: frame.video_fps,
     };
   } catch (error) {
     console.warn(`Failed to transform frame: ${frame.s3_key}`, error);
@@ -46,6 +47,7 @@ function transformBackendFrame(frame: BackendFrame): SearchResult {
       frame_stamp: 0,
       watch_url: "",
       ocr_text: undefined,
+      video_fps: undefined,
     };
   }
 }
